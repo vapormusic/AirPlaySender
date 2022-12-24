@@ -94,5 +94,12 @@ namespace AirPlayClient
             EndPoint remoteSendEndPoint = new IPEndPoint(IPAddress.Parse(device.host), device.port);
             controlSocket.SendTo(data, remoteSendEndPoint);
         }
+
+        public void Close()
+        {
+            // Close the sockets.
+            timingSocket.Close();
+            controlSocket.Close();
+        }
     }
 }

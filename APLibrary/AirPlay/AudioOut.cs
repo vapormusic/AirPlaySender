@@ -1,17 +1,23 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 
 namespace APLibrary.AirPlay
 {
+    public delegate void PacketEvent(Packet packet);
+    public delegate void NeedSyncEvent(int seq);
     public class AudioOut
     {
         private int lastSeq;
         private bool hasAirTunes;
         private int rtp_time_ref;
-        private static int SEQ_NUM_WRAP = (int) Math.Pow(2, 16); 
+        private static int SEQ_NUM_WRAP = (int) Math.Pow(2, 16);
+
+        public event PacketEvent emitPacket;
+        public event NeedSyncEvent emitNeedSync;
 
         public AudioOut()
         {
@@ -19,19 +25,23 @@ namespace APLibrary.AirPlay
              hasAirTunes = false;
         }
         
-        public void Init(CircularBuffer circularBuffer) // TODO: add devices
+        public void Init(Devices devices, CircularBuffer circularBuffer)
         {
-            var self = this;
             rtp_time_ref = (int) Math.Floor((double) (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond));
 
-            // devices.on('airtunes_devices', function(hasAirTunes) {
-                // self.hasAirTunes = hasAirTunes;
-            // });
+            void listener1(bool hasAirTunes)
+            {
+                this.hasAirTunes = hasAirTunes;
+            }
 
-            // devices.on('need_sync', function() {
-                // A sync is forced when a new remote device is added.
-               // self.emit('need_sync', self.lastSeq);
-            // });
+            void listener2()
+            {
+                emitNeedSync?.Invoke(this.lastSeq);
+            }
+            
+            devices.emitAirTunesDevices += listener1;
+            // A sync is forced when a new remote device is added.
+            devices.emitDevicesNeedSync += listener2;
             
             void SendPacket(int seq)
             {
@@ -40,10 +50,12 @@ namespace APLibrary.AirPlay
                 packet.seq = seq % SEQ_NUM_WRAP;
                 packet.timestamp = (seq * 352 + 2 * 44100) % 4294967296;
 
-                if (hasAirTunes && seq % 126 == 0) { }
-                    // self.emit('need_sync', seq);
+                if (hasAirTunes && seq % 126 == 0)
+                {
+                    emitNeedSync?.Invoke(seq);
+                }
 
-                // self.emit('packet', packet);
+                emitPacket?.Invoke(packet);
                 packet.Release();
             }
 
