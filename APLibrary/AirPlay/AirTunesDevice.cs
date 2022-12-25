@@ -1,4 +1,5 @@
 ﻿using AirPlayClient;
+using APLibrary.AirPlay.HomeKit;
 using BitConverter;
 using Newtonsoft.Json;
 using System;
@@ -42,7 +43,7 @@ namespace APLibrary.AirPlay
         public int serverPort;
         public int? controlPort;
         public int timingPort;
-        // private AirPlay2Credentials credentials = setup.credentials ;
+        private Credentials credentials;
 
         public AirTunesDevice(string host, AudioOut audioOut, Options options, int mode, string[] txt)
         {
@@ -237,14 +238,10 @@ namespace APLibrary.AirPlay
             // this.rtsp.setProgress(progress, duration, callback);
         }
 
-        private byte[] makeAirTunesPacket(Packet packet, bool requireEncryption, bool alacEncoding = true
-           // , Airplay2Credentials credentials = null
-            )
+        private byte[] makeAirTunesPacket(Packet packet, bool requireEncryption, bool alacEncoding = true, Credentials? credentials = null)
         {
             // console.log("alacEncoding2",alacEncoding)
-            byte[] alac = (alacEncoding
-                // || credentials
-                ) ? pcmToALAC(packet.data) : pcmParse(packet.data);
+            byte[] alac = (alacEncoding || (credentials != null)) ? pcmToALAC(packet.data) : pcmParse(packet.data);
             byte[] airTunes = new byte[alac.Length + RTP_HEADER_SIZE];
 
             byte[] header = makeRTPHeader(packet);
@@ -252,21 +249,21 @@ namespace APLibrary.AirPlay
             {
                 alac = encryptAES(alac);
             }
-            //if (credentials != null)
-            //{
-            //    byte[] pcm = credentials.encryptAudio(alac, header.Skip(4).Take(8), packet.seq);
-            //    byte[] airplay = new byte[alac.Length + RTP_HEADER_SIZE];
-            //    Array.Copy(header, 0, airplay, 0, header.Length);
-            //    Array.Copy(pcm, 0, airplay, RTP_HEADER_SIZE, pcm.Length);
-            //    return airplay;
-            //    // console.log(alac.length)
-            //}
-            //else
-            //{
+            if (credentials != null)
+            {
+                byte[] pcm = credentials.EncryptAudio(alac, header.Skip(4).Take(8).ToArray(), packet.seq);
+                byte[] airplay = new byte[alac.Length + RTP_HEADER_SIZE];
+                Array.Copy(header, 0, airplay, 0, header.Length);
+                Array.Copy(pcm, 0, airplay, RTP_HEADER_SIZE, pcm.Length);
+                return airplay;
+                // console.log(alac.length)
+            }
+            else
+            {
                 Array.Copy(header, 0, airTunes, 0, header.Length);
                 Array.Copy(alac, 0, airTunes, RTP_HEADER_SIZE, alac.Length);
                 return airTunes;
-            //}
+            }
         }
 
         private byte[] pcmToALAC(byte[] pcmData)
@@ -377,7 +374,7 @@ namespace APLibrary.AirPlay
             Array.Copy(EndianBitConverter.BigEndian.GetBytes((ushort)(packet.seq % 65536)), 0, header, 2, 2);
 
             Array.Copy(EndianBitConverter.BigEndian.GetBytes((uint)packet.timestamp), 0, header, 4, 4);
-            Array.Copy(EndianBitConverter.BigEndian.GetBytes((uint)334088158), 0, header, 4, 4);
+            Array.Copy(EndianBitConverter.BigEndian.GetBytes((uint)334088158), 0, header, 8, 4);
 
             return header;
         }

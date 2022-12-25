@@ -9,7 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="EndianBitConverter.net6" Version="1.1.1" />
+    <PackageReference Include="NaCl.Core" Version="2.0.4" />
     <PackageReference Include="Newtonsoft.Json.Bson" Version="1.0.2" />
+    <PackageReference Include="plist-cil" Version="2.2.0" />
+    <PackageReference Include="Rebex.Elliptic.Curve25519" Version="1.2.1" />
+    <PackageReference Include="Rebex.Elliptic.Ed25519" Version="1.2.1" />
+    <PackageReference Include="srp" Version="1.0.7" />
   </ItemGroup>
 
 </Project>
