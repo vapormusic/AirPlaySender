@@ -1,6 +1,6 @@
-﻿namespace APLibrary.AirPlay
+﻿namespace APLibrary.AirPlay.Types
 {
-    public class Options
+    public class AirTunesOptions
     {
         public int? port;
         public string host;
@@ -13,7 +13,8 @@
         public bool airplay2;
         public bool? needPin;
         public bool? borkedshp;
-        public Options()
+        
+        public AirTunesOptions()
         {
             
         }

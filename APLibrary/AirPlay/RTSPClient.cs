@@ -1,30 +1,41 @@
 ﻿using AirPlayClient;
+using APLibrary.AirPlay.HomeKit;
+using APLibrary.AirPlay.Types;
+using APLibrary.AirPlay.Utils;
+using Claunia.PropertyList;
+using Microsoft.VisualBasic;
+using Newtonsoft.Json.Linq;
 using SecureRemotePassword;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Mime;
 using System.Net.Sockets;
+using System.Runtime.ConstrainedExecution;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 
 namespace APLibrary.AirPlay
 {
+    public delegate void EmitEndEvent(string status,string msg);
+    public delegate void NeedPassword();
     public class RTSPClient
     {
         //TODO: write rtsp.js to c#
+        private static string user_agent = "iTunes/11.3.1 (Windows; Microsoft Windows 10 x64(Build 19044); x64) (dt:2)";
         private AudioOut audioOut;
         private int status;
-        private Socket? socket;
+        private TcpClient? socket;
         private int cseq;
         private string? announceId;
         private string? activeRemote;
         private string? dacpId;
         private string? session;
-        private int? timeout;
+        private CancellationTokenSource? timeout;
         private int? volume;
         private int? progress;
         private int? duration;
@@ -32,7 +43,7 @@ namespace APLibrary.AirPlay
         private string password;
         private bool passwordTried;
         private bool requireEncryption;
-        private string trackInfo;
+        private Dictionary<string, string>? trackInfo;
         private byte[] artwork;
         private string artworkContentType;
         private Action callback;
@@ -40,7 +51,7 @@ namespace APLibrary.AirPlay
         private int? timingPort;
         private int? timingDestPort;  
         private int? eventPort;
-        private bool? heartBeat;
+        private System.Timers.Timer? heartBeat;
         private byte[] pair_verify_1_verifier;
         private byte[] pair_verify_1_signature;
         private byte[] code_digest;
@@ -70,16 +81,20 @@ namespace APLibrary.AirPlay
         private byte[] _atv_pub_key;
         private byte[] _hap_genkey;
         private byte[] _hap_encrypteddata;
-        private byte[] pairingId;
+        private string? pairingId;
         private byte[] seed ;
-        private byte[] credentials;
+        private Credentials credentials;
         private byte[] event_credentials;
         private byte[] verifier_hap_1;
         private byte[] encryptionKey;
         private bool encryptedChannel;
         private string hostip;
         private string homekitver;
-        private int INFO = -1,
+        private NetworkStream nsctrl;
+        private StreamReader srctrl;
+        public event EmitEndEvent emitEnd;
+        public event NeedPassword emitNeedPassword;
+        private const int INFO = -1,
         OPTIONS = 0,
         ANNOUNCE = 1,
         SETUP = 2,
@@ -110,7 +125,7 @@ namespace APLibrary.AirPlay
         GETVOLUME = 27,
         SETPROGRESS = 28;
 
-        public RTSPClient(int volume, string password, AudioOut audioOut, Options options)
+        public RTSPClient(int volume, string password, AudioOut audioOut, AirTunesOptions options)
         {
             this.audioOut = audioOut;
             this.status = PAIR_VERIFY_1;
@@ -190,265 +205,253 @@ namespace APLibrary.AirPlay
             return cts;
         }
 
-        public void startHandshake (UDPServers udpServers, string host, string port)
+        public void ClearTimeout(CancellationTokenSource cts)
         {
-            var self = this;
-            this.startTimeout();
-            this.hostip = host;
-            this.controlPort = ((IPEndPoint) udpServers.controlEndPoint).Port;
+            cts.Cancel();
+        }
+
+        public void startHandshake(UDPServers udpServers, string host, string port)
+        {
+            //var self = this;
+            // this.startTimeout();
+            this.controlPort = ((IPEndPoint)udpServers.controlEndPoint).Port;
             this.timingPort = ((IPEndPoint)udpServers.timingEndPoint).Port;
+            this.hostip = host;
 
-            TcpClient client = new TcpClient();
-            client.Connect(host, int.Parse(port));
-            this.socket = client.GetStream();
-            this.socket.ReadTimeout = 10000;
-            this.socket.WriteTimeout = 10000;
-            
-            
-            this.socket = net.connect(port, host, async function() {
-                self.clearTimeout();
+            this.socket = new TcpClient();
+            this.socket.ReceiveTimeout = 400000000;
+            this.socket.SendTimeout = 400000000;
+            this.socket.ConnectAsync(host, int.Parse(port)).ContinueWith(task => {
 
-                if (self.needPassword)
+                nsctrl = this.socket.GetStream();
+                srctrl = new StreamReader(nsctrl);
+                // this.clearTimeout();
+
+                if (this.needPassword)
                 {
-                    self.status = PAIR_PIN_START;
-                    self.sendNextRequest();
-                    self.startHeartBeat();
+                    this.status = PAIR_PIN_START;
+                    this.sendNextRequest();
+                    this.startHeartBeat();
                 }
                 else
                 {
-                    if (self.mode != 2)
+                    if (this.mode != 2)
                     {
-                        if (this.debug) console.log("AUTH_SETUP", "nah")
-                      self.status = OPTIONS;
-                        self.sendNextRequest();
-                        self.startHeartBeat();
+                        if (this.debug) Console.WriteLine("AUTH_SETUP", "nah");
+                        this.status = OPTIONS;
+                        this.sendNextRequest();
+                        this.startHeartBeat();
                     }
                     else
                     {
-                        self.status = AUTH_SETUP;
-                        if (this.debug) console.log("AUTH_SETUP", "yah")
-                      self.sendNextRequest();
-                        self.startHeartBeat();
+                        this.status = AUTH_SETUP;
+                        if (this.debug) Console.WriteLine("AUTH_SETUP", "yah");
+                        this.sendNextRequest();
+                        this.startHeartBeat();
                     }
 
 
                 }
             });
 
-            var blob = [];
-            this.socket.on('data', function(data) {
-                if (self.encryptedChannel)
-                {
-                    // if (self.debug != false) console.log("incoming", data)
-                    data = self.credentials.decrypt(data)
-                }
-                self.clearTimeout();
+        }
 
-                /*
-                 * I wish I could use node's HTTP parser for this...
-                 * I assume that all responses have empty bodies.
-                 */
-                var rawData = data
-              data = data.toString();
-
-                blob += data;
-                var endIndex = blob.indexOf('\r\n\r\n');
-
-                if (endIndex < 0)
-                {
-                    return;
-                }
-
-                endIndex += 4;
-
-                blob = blob.substring(0, endIndex);
-                self.processData(blob, rawData);
-
-                blob = data.substring(endIndex);
-            });
-
-            this.socket.on('error', function(err) {
-                self.socket = null;
-                if (this.debug) console.log(err.code);
-                if (err.code === 'ECONNREFUSED')
-                {
-                    if (this.debug) console.log('block');
-                    self.cleanup('connection_refused');
-                }
-                else
-                    self.cleanup('rtsp_socket', err.code);
-            });
-
-            this.socket.on('end', function() {
-                if (self.debug) console.log('block2');
-                self.cleanup('disconnected');
-            });
-        };
-
-        private void startTimeout()
-        {
-            var self = this;
-            this.timeout = setTimeout(function() {
-                if (self.debug) console.log('timeout');
-                self.cleanup('timeout');
-            }, config.rtsp_timeout);
-        };
-
-        private void clearTimeout()
-        {
-            if (this.timeout !== null)
+        public byte[]? ExecRequest(byte[] input ,bool GetResponse){
+            if (this.encryptedChannel && this.credentials != null)
             {
-                clearTimeout(this.timeout);
-                this.timeout = null;
+                input = this.credentials.encrypt(input);
             }
-        };
+            nsctrl.Write(input, 0, input.Length);
 
-        Client.prototype.teardown = function()
-        {
-            if (this.status === CLOSED)
+            if (!GetResponse)
+                return null;
+
+            byte[] res = null;
+            int lastRead = 0;
+
+            using (MemoryStream ms = new MemoryStream())
             {
-                this.emit('end', 'stopped');
+                byte[] buffer = new byte[4096];
+                do
+                {
+                    lastRead = nsctrl.Read(buffer, 0, buffer.Length);
+                    ms.Write(buffer, 0, lastRead);
+                } while (lastRead > 0);
+
+                res = ms.ToArray();
+            }
+            if (this.encryptedChannel && this.credentials != null)
+            {
+                res = this.credentials.decrypt(res);
+            }
+            return res;
+        }
+
+        //private void startTimeout()
+        //{
+        //    var self = this;
+        //    this.timeout = setTimeout(function() {
+        //        if (self.debug) console.log("timeout");
+        //        self.cleanup("timeout");
+        //    }, config.rtsp_timeout);
+        //};
+
+        //private void clearTimeout()
+        //{
+        //    if (this.timeout !== null)
+        //    {
+        //        clearTimeout(this.timeout);
+        //        this.timeout = null;
+        //    }
+        //};
+
+        public void teardown()
+        {
+            if (this.status == CLOSED)
+            {
+                emitEnd?.Invoke("stopped", "");
                 return;
             }
 
             this.status = TEARDOWN;
             this.sendNextRequest();
-        };
+        }
 
-        Client.prototype.setVolume = function(volume, callback)
+        public void setVolume(int volume, Action callback)
         {
-            if (this.status !== PLAYING)
+            if (this.status != PLAYING)
                 return;
 
             this.volume = volume;
             this.callback = callback;
             this.status = SETVOLUME;
             this.sendNextRequest();
-        };
+        }
 
-        Client.prototype.setProgress = function(progress, duration, callback)
+        public void setProgress(int progress, int duration, Action callback)
         {
-            if (this.status !== PLAYING)
+            if (this.status != PLAYING)
                 return;
             this.progress = progress;
             this.duration = duration;
             this.callback = callback;
             this.status = SETPROGRESS;
             this.sendNextRequest();
-        };
+        }
 
-        Client.prototype.setPasscode = async function(passcode)
+        public void setPasscode(string passcode)
         {
             this.password = passcode;
             this.status = this.airplay2 ? PAIR_SETUP_1 : PAIR_PIN_SETUP_1;
             this.sendNextRequest();
         }
 
-        Client.prototype.startHeartBeat = function()
+        public void startHeartBeat()
         {
-            var self = this;
-
-            if (config.rtsp_heartbeat > 0)
+            if (15000 > 0)
             {
-                this.heartBeat = setInterval(function() {
-                    self.sendHeartBeat(function(){
-                        //console.log('HeartBeat sent!');
-                    });
-                }, config.rtsp_heartbeat);
+                void sendHB() {
+                    this.sendHeartBeat();
+                }
+                this.heartBeat = Interval.Set(sendHB, 15000);
             }
-        };
+        }
 
-        Client.prototype.sendHeartBeat = function(callback)
+        private void sendHeartBeat() 
         {
-            if (this.status !== PLAYING)
+            if (this.status != PLAYING)
                 return;
 
             this.status = OPTIONS;
-            this.callback = callback;
             this.sendNextRequest();
-        };
+        }
 
-        Client.prototype.setTrackInfo = function(name, artist, album, callback)
+        public void setTrackInfo(string name, string artist, string album, Action callback)
         {
-            if (this.status !== PLAYING)
+            if (this.status != PLAYING)
                 return;
-            if (name != this.trackInfo?.name || artist != this.trackInfo?.artist || album != this.trackInfo?.album)
+            string? name1 = null;
+            this.trackInfo?.TryGetValue("name", out name1);
+            string? artist1 = null;
+            this.trackInfo?.TryGetValue("artist", out artist1);
+            string? album1 = null;
+            this.trackInfo?.TryGetValue("album", out album1);
+            if (name != name1 || artist != artist1 || album != album1)
             {
-                this.starttime = this.audioOut.lastSeq * config.frames_per_packet + 2 * config.sampling_rate;
+                this.starttime = this.audioOut.lastSeq * 352 + 2 * 44100;
             }
-            this.trackInfo = {
-            name: name,
-    artist: artist,
-    album: album
-            };
+            this.trackInfo = new Dictionary<string, string>();
+            this.trackInfo.Add("name", name);
+            this.trackInfo.Add("artist", artist);
+            this.trackInfo.Add("album", album);
             this.status = SETDAAP;
             this.callback = callback;
             this.sendNextRequest();
-        };
+        }
 
-        Client.prototype.setArtwork = function(art, contentType, callback)
+        public void setArtwork(byte[] art, string contentType, Action callback)
         {
-            if (this.status !== PLAYING)
+            if (this.status != PLAYING)
                 return;
 
-            if (typeof contentType == 'function')
-            {
-                callback = contentType;
-                contentType = null;
-            }
+            //if (typeof contentType == "function")
+            //{
+            //    callback = contentType;
+            //    contentType = null;
+            //}
 
-            if (typeof art == 'string')
-            {
-                var self = this;
-                if (contentType === null)
-                {
-                    var ext = art.slice(-4);
-                    if (ext == ".jpg" || ext == "jpeg")
-                    {
-                        contentType = "image/jpeg";
-                    }
-                    else if (ext == ".png")
-                    {
-                        contentType = "image/png";
-                    }
-                    else if (ext == ".gif")
-                    {
-                        contentType = "image/gif";
-                    }
-                    else
-                    {
-                        return self.cleanup('unknown_art_file_ext');
-                    }
-                }
-                return fs.readFile(art, function(err, data) {
-                    if (err !== null)
-                    {
-                        return self.cleanup('invalid_art_file');
-                    }
-                    self.setArtwork(data, contentType, callback);
-                });
-            }
+            //if (typeof art == "string")
+            //{
+            //    var self = this;
+            //    if (contentType === null)
+            //    {
+            //        var ext = art.slice(-4);
+            //        if (ext == ".jpg" || ext == "jpeg")
+            //        {
+            //            contentType = "image/jpeg";
+            //        }
+            //        else if (ext == ".png")
+            //        {
+            //            contentType = "image/png";
+            //        }
+            //        else if (ext == ".gif")
+            //        {
+            //            contentType = "image/gif";
+            //        }
+            //        else
+            //        {
+            //            return self.cleanup("unknown_art_file_ext");
+            //        }
+            //    }
+            //    return fs.readFile(art, function(err, data) {
+            //        if (err !== null)
+            //        {
+            //            return self.cleanup("invalid_art_file");
+            //        }
+            //        self.setArtwork(data, contentType, callback);
+            //    });
+            //}
 
-            if (contentType === null)
-                return this.cleanup('no_art_content_type');
+            //if (contentType === null)
+            //    return this.cleanup("no_art_content_type");
 
             this.artworkContentType = contentType;
             this.artwork = art;
             this.status = SETART;
             this.callback = callback;
             this.sendNextRequest();
-        };
-
-        Client.prototype.nextCSeq = function()
+        }
+        
+        public int nextCSeq()
         {
             this.cseq += 1;
 
             return this.cseq;
-        };
+        }
 
-        Client.prototype.cleanup = function(type, msg)
+        public void cleanup(string type, string msg)
         {
-            this.emit('end', type, msg);
+            emitEnd?.Invoke(type, msg);
             this.status = CLOSED;
             this.trackInfo = null;
             this.artwork = null;
@@ -467,26 +470,175 @@ namespace APLibrary.AirPlay
             this._hap_encrypteddata = null;
             this.seed = null;
             this.credentials = null;
-            // this.password = null;
-            this.removeAllListeners();
+            this.password = null;
+            //this.removeAllListeners();
 
-            if (this.timeout)
+            if (this.timeout != null)
             {
-                clearTimeout(this.timeout);
+                ClearTimeout(this.timeout);
                 this.timeout = null;
             }
-
-            if (this.heartBeat)
+            
+            if (this.heartBeat != null)
             {
-                clearInterval(this.heartBeat);
+                Interval.Stop(this.heartBeat);
                 this.heartBeat = null;
             }
 
-            if (this.socket)
+            if (this.socket != null)
             {
-                this.socket.destroy();
+                this.socket.Close();
                 this.socket = null;
             }
-        };
+        }
+        
+        public byte[] makeHead(string method, string uri, DI? di = null, bool clear = false)
+        {
+            string head = method + " " + uri + " RTSP/1.0" + "\r\n";
+            if (!clear)
+            {
+                head += "CSeq: " + this.nextCSeq() + "\r\n" +
+                "User-Agent: " + (this.airplay2 ? "AirPlay/409.16" : user_agent) + "\r\n" +
+                "DACP-ID: " + this.dacpId + "\r\n" +
+                ((this.session != null) ? "Session: " + this.session + "\r\n" : "") +
+                "Active-Remote: " + this.activeRemote + "\r\n";
+                head += "Client-Instance: " + this.dacpId + "\r\n";
+            };
+
+            if (di != null)
+            {
+                var ha1 = Utils.Utils.CreateMD5(di.username + ":" + di.realm + ":" + di.password);
+                var ha2 = Utils.Utils.CreateMD5(method + ":" + uri);
+                var diResponse = Utils.Utils.CreateMD5(ha1 + ":" + di.nonce + ":" + ha2);
+
+                head += "Authorization: Digest " +
+                  "username=\"" + di.username + "\", " +
+                  "realm=\"" + di.realm + "\", " +
+                  "nonce=\"" + di.nonce + "\", " +
+                  "uri=\"" + uri + "\", " +
+                  "response=\"" + diResponse + "\"\r\n";
+            }
+
+            return System.Text.Encoding.Unicode.GetBytes(head);
+        }
+
+        public byte[] makeHeadWithURL (string method, DI digestInfo)
+        {
+            return this.makeHead(method, "rtsp://" + this.socket?.Client.LocalEndPoint.ToString() + "/" + this.announceId, digestInfo);
+        }
+
+        public void sendNextRequest(int? force_mode = null)
+        {
+            if (force_mode != null)
+            {
+                this.status = force_mode.Value;
+            }
+
+            byte[] request = new byte[0];
+            bool getResponse = true;
+            string u = "";
+
+            switch (this.status)
+            {
+                case PAIR_PIN_START:
+                    this.I = "366B4165DD64AD3A";
+                    this.P = null;
+                    this.s = null;
+                    this.B = null;
+                    this.a = null;
+                    this.A = null;
+                    this.M1 = null;
+                    this.epk = null;
+                    this.authTag = null;
+                    this._atv_salt = null;
+                    this._atv_pub_key = null;
+                    this._hap_encrypteddata = null;
+                    this.seed = null;
+                    this.pairingId = Guid.NewGuid().ToString();
+                    this.credentials = null;
+                    this.verifier_hap_1 = null;
+                    this.encryptionKey = null;
+                    
+                    if (this.needPin || this.airplay2)
+                    {
+                        request = request.Concat(this.makeHead("POST", "/pair-pin-start", null, true)).ToArray();
+                        if (this.airplay2)
+                        {
+
+                            u += "User-Agent: AirPlay/409.16\r\n";
+                            u += "Connection: keep-alive\r\n";
+                            u += "CSeq: " + "0" + "\r\n";
+                            
+                        }
+                        u += "Content-Length:" + 0 + "\r\n\r\n";
+                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    } else
+                    {
+                        emitNeedPassword?.Invoke();
+                        this.status = this.airplay2 ? INFO : PAIR_PIN_SETUP_1;
+                    }
+                    break;
+                case PAIR_PIN_SETUP_1:
+                    request = request.Concat(this.makeHead("POST", "/pair-setup-pin", null, true)).ToArray();
+                    u += "Content-Type: application/x-apple-binary-plist\r\n";
+                    
+                    using (var memoryStream = new MemoryStream())
+                    {
+                        BinaryPropertyListWriter bplist = new BinaryPropertyListWriter(memoryStream);
+                        NSDictionary dict = new NSDictionary();
+                        dict.Add("user", "366B4165DD64AD3A");
+                        dict.Add("method", "pin");
+                        bplist.Write(dict);
+                        byte[] bpbuf = memoryStream.ToArray();
+
+                        u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
+                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
+                    };
+                    
+
+
+                    break;
+                case PAIR_PIN_SETUP_2:
+                    request = request.Concat(this.makeHead("POST", "/pair-setup-pin", null, true)).ToArray();
+                    u += "Content-Type: application/x-apple-binary-plist\r\n";
+                    using (var memoryStream = new MemoryStream())
+                    {
+                        BinaryPropertyListWriter bplist = new BinaryPropertyListWriter(memoryStream);
+                        NSDictionary dict = new NSDictionary();
+                        dict.Add("pk", new NSData(this.A));
+                        dict.Add("proof", new NSData(this.M1));
+                        bplist.Write(dict);
+                        byte[] bpbuf = memoryStream.ToArray();
+
+                        u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
+                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
+                    };
+                    break;
+                case PAIR_PIN_SETUP_3:
+                    request = request.Concat(this.makeHead("POST", "/pair-setup-pin", null, true)).ToArray();
+                    u += "Content-Type: application/x-apple-binary-plist\r\n";
+                    using (var memoryStream = new MemoryStream())
+                    {
+                        BinaryPropertyListWriter bplist = new BinaryPropertyListWriter(memoryStream);
+                        NSDictionary dict = new NSDictionary();
+                        dict.Add("epk", new NSData(this.epk));
+                        dict.Add("authTag", new NSData(this.authTag));
+                        bplist.Write(dict);
+                        byte[] bpbuf = memoryStream.ToArray();
+
+                        u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
+                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
+                    };
+                    break;
+    
+            }
+
+
+
+
+            ExecRequest(request, getResponse);
+
+        }
+        
     }
 }

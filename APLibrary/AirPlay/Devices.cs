@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using APLibrary.AirPlay.Types;
 
 namespace APLibrary.AirPlay
 {
@@ -46,7 +47,7 @@ namespace APLibrary.AirPlay
                     this.audioOut.emitNeedSync += NeedSyncHandler;
         }
 
-         public AirTunesDevice add(string type, string host, Options options)
+         public AirTunesDevice add(string type, string host, AirTunesOptions options)
          {
 
             this.status = "connecting";

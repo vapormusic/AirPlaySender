@@ -1,5 +1,6 @@
 ﻿using AirPlayClient;
 using APLibrary.AirPlay.HomeKit;
+using APLibrary.AirPlay.Types;
 using BitConverter;
 using Newtonsoft.Json;
 using System;
@@ -45,7 +46,7 @@ namespace APLibrary.AirPlay
         public int timingPort;
         private Credentials credentials;
 
-        public AirTunesDevice(string host, AudioOut audioOut, Options options, int mode, string[] txt)
+        public AirTunesDevice(string host, AudioOut audioOut, AirTunesOptions options, int mode, string[] txt)
         {
 
             this.udpServers = new UDPServers();

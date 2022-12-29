@@ -11,7 +11,7 @@ namespace APLibrary.AirPlay
     public delegate void NeedSyncEvent(int seq);
     public class AudioOut
     {
-        private int lastSeq;
+        public int lastSeq;
         private bool hasAirTunes;
         private int rtp_time_ref;
         private static int SEQ_NUM_WRAP = (int) Math.Pow(2, 16);
