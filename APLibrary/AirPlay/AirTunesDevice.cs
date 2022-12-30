@@ -402,10 +402,7 @@ namespace APLibrary.AirPlay
                 {
                     using (CryptoStream cs = new CryptoStream(ms, cipher, CryptoStreamMode.Write))
                     {
-                        using (StreamWriter sw = new StreamWriter(cs))
-                        {
-                            sw.Write(alacData.Skip(i).Take(16));
-                        }
+                            cs.Write(alacData, i, 16);
                     }
 
                     byte[] chunk = ms.ToArray();

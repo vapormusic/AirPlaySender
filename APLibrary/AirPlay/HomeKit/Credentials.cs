@@ -13,15 +13,15 @@ namespace APLibrary.AirPlay.HomeKit
 {
     public class Credentials
     {
-        private string uniqueIdentifier;
-        private byte[] identifier;
-        private string pairingId;
-        private byte[] publicKey;
-        private byte[] encryptionKey;
+        public string uniqueIdentifier;
+        public byte[] identifier;
+        public string pairingId;
+        public byte[] publicKey;
+        public byte[] encryptionKey;
         public byte[] writeKey;
         public byte[] readKey;
-        private int encryptCount;
-        private int decryptCount;
+        public int encryptCount;
+        public int decryptCount;
 
         public Credentials(string uniqueIdentifier, byte[] identifier, string pairingId, byte[] publicKey, byte[] encryptionKey)
         {

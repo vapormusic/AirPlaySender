@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Dorssel.Security.Cryptography.AesExtra" Version="1.1.0" />
     <PackageReference Include="EndianBitConverter.net6" Version="1.1.1" />
     <PackageReference Include="NaCl.Core" Version="2.0.4" />
     <PackageReference Include="Newtonsoft.Json.Bson" Version="1.0.2" />

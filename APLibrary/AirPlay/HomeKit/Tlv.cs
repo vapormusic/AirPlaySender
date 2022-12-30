@@ -28,7 +28,7 @@ namespace APLibrary.AirPlay.HomeKit
     public class Tlv
     {
         
-    public byte[] Encode(Dictionary<byte, byte[]> dict)
+    public static byte[] Encode(Dictionary<byte, byte[]> dict)
     {
             var encodedTLVBuffer = new byte[0];
             
@@ -70,7 +70,7 @@ namespace APLibrary.AirPlay.HomeKit
             return encodedTLVBuffer;
     }
     
-    public Dictionary<byte, byte[]> Decode(byte[] data)
+    public static Dictionary<byte, byte[]> Decode(byte[] data)
     {
         Dictionary<byte, byte[]> objects = new Dictionary<byte, byte[]>();
         var leftLength = data.Length;

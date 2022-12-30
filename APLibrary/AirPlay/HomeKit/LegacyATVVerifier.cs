@@ -1,4 +1,7 @@
 ﻿using BitConverter;
+using Dorssel.Security.Cryptography;
+using Microsoft.VisualBasic;
+using Rebex.Security.Cryptography;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -11,20 +14,8 @@ namespace APLibrary.AirPlay.HomeKit
 {
     internal class LegacyATVVerifier
     {
-        //        const elliptic  = require('elliptic');
-        //        const crypto    = require('crypto');
 
-        //        const axlsign = require('axlsign');
-
-        //        const {
-        //    hexString2ArrayBuffer,
-        //    buf2hex
-        //    }               = require('./util');
-
-        //    // ...
-        //    // Note: All functions expect parameters to be hex strings.
-
-        public string pair_setup_aes_key(string K)
+        public static string pair_setup_aes_key(string K)
         {
             using (SHA512 shaM = new SHA512Managed())
             {
@@ -35,7 +26,7 @@ namespace APLibrary.AirPlay.HomeKit
                 
         }
 
-        public string pair_setup_aes_iv(string K)
+        public static string pair_setup_aes_iv(string K)
         {
             using (SHA512 shaM = new SHA512Managed())
             {
@@ -46,108 +37,111 @@ namespace APLibrary.AirPlay.HomeKit
             }
         }
 
-        function pair_verify_aes_key(shared)
+        public static string pair_verify_aes_key(string shared)
         {
-            return buf2hex(
-                crypto.createHash('sha512')
-                    .update('Pair-Verify-AES-Key')
-                    .update(hexString2ArrayBuffer(shared))
-                    .digest()
-                    .slice(0, 16)
-            );
+            using (SHA512 shaM = new SHA512Managed())
+            {
+                byte[] hash = shaM.ComputeHash(Encoding.ASCII.GetBytes("Pair-Verify-AES-Key").Concat(Utils.Utils.HexStringToByteArray(shared)).ToArray());
+                hash = hash.Skip(0).Take(16).ToArray();
+                return Convert.ToHexString(hash);
+            }
         }
 
-        function pair_verify_aes_iv(shared)
+        public static string pair_verify_aes_iv(string shared)
         {
-            return buf2hex(
-                crypto.createHash('sha512')
-                    .update('Pair-Verify-AES-IV')
-                    .update(hexString2ArrayBuffer(shared))
-                    .digest()
-                    .slice(0, 16)
-            );
+            using (SHA512 shaM = new SHA512Managed())
+            {
+                byte[] hash = shaM.ComputeHash(Encoding.ASCII.GetBytes("Pair-Verify-AES-IV").Concat(Utils.Utils.HexStringToByteArray(shared)).ToArray());
+                hash = hash.Skip(0).Take(16).ToArray();
+                return Convert.ToHexString(hash);
+            }
+ 
         }
 
-        //    // ...
-        //    // Public.
+        // ...
+        // Public.
 
-        //    function a_pub(a)
-        //    {
-        //        return elliptic.utils.toHex(new elliptic.eddsa('ed25519').keyFromSecret(a).getPublic());
-        //    }
+        public static string a_pub(byte[] a)
+        {
+            var ed = new Ed25519();
+            ed.FromPrivateKey(a);
+            return Convert.ToHexString(ed.GetPublicKey());
+        }
 
-        //    function confirm(a, K)
-        //    {
-        //        const key   = pair_setup_aes_key(K);
-        //        const iv    = pair_setup_aes_iv(K);
+        public static Dictionary<string,byte[]> confirm(byte[] a, string K)
+        {
+            string key = pair_setup_aes_key(K);
+            string iv  = pair_setup_aes_iv(K);
 
-        //        const cipher = crypto.createCipheriv(
-        //            'aes-128-gcm',
-        //            hexString2ArrayBuffer(key),
-        //            hexString2ArrayBuffer(iv)
-        //        );
+            var plaintextBytes = Utils.Utils.HexStringToByteArray(a_pub(a));
+            var ciphertext = new byte[Utils.Utils.HexStringToByteArray(a_pub(a)).Length];
+            var tag = new byte[AesGcm.TagByteSizes.MaxSize];
+            using (var aes = new AesGcm(Utils.Utils.HexStringToByteArray(key)))
+            {
+                aes.Encrypt(Utils.Utils.HexStringToByteArray(iv), plaintextBytes, ciphertext, tag);
+            } ;
 
-        //        let encrypted = cipher.update(hexString2ArrayBuffer(a_pub(a)), null, 'hex');
-        //        encrypted += cipher.final('hex');
+            Dictionary<string, byte[]> u = new Dictionary<string, byte[]>();
+            u.Add("epk", ciphertext);
+            u.Add("authTag", tag);
+            return u;
+        }
 
-        //        return {
-        //        epk: encrypted,
-        //        authTag: buf2hex(cipher.getAuthTag())
-        //        }
-        //    }
+        public static Dictionary<string, byte[]> verifier(byte[] a)
+        {
+            var curve = new Curve25519();
+            byte[] rndkey = new byte[32];
+            RandomNumberGenerator rng = RandomNumberGenerator.Create();
+            rng.GetBytes(rndkey);
+            curve.FromPrivateKey(rndkey);
+            byte[] v_pri = curve.GetPrivateKey();
+            byte[] v_pub = curve.GetPublicKey();
 
-        //    function verifier(a)
-        //    {
-        //        const keyPair   = axlsign.generateKeyPair(crypto.randomBytes(32));
-        //        const v_pri     = buf2hex(keyPair.private);
-        //    const v_pub     = buf2hex(keyPair.public);
+            byte[] header = new byte[] {0x01, 0x00, 0x00, 0x00};
+            byte[] a_pub_buf = Convert.FromHexString(a_pub(a));
 
-        //    const header    = Buffer.from([0x01, 0x00, 0x00, 0x00]);
-        //    const a_pub_buf = Buffer.from(a_pub(a), 'hex');
+            Dictionary<string, byte[]> u = new Dictionary<string, byte[]>();
+            u.Add("verifierBody", header.Concat(curve.GetPublicKey()).Concat(a_pub_buf).ToArray());
+            u.Add("v_pri", v_pri);
+            u.Add("v_pub", v_pub);
 
-        //    return {
-        //        verifierBody: Buffer.concat(
-        //            [header, keyPair.public, a_pub_buf],
-        //            header.byteLength + keyPair.public.byteLength + a_pub_buf.byteLength
-        //        ),
-        //        v_pri,
-        //        v_pub
-        //};
-        //}
+            return u;
+        }
 
-        //function shared(v_pri, atv_pub)
-        //{
-        //    return buf2hex(
-        //        axlsign.sharedKey(
-        //            hexString2ArrayBuffer(v_pri),
-        //            hexString2ArrayBuffer(atv_pub)
-        //        )
-        //    );
-        //}
+        public static string shared(byte[] v_pri, byte[] atv_pub)
+        {
+            var curve = new Curve25519();
+            curve.FromPublicKey(v_pri);           
+            return Convert.ToHexString(curve.GetSharedSecret(atv_pub));
+        }
 
-        //function signed(a, v_pub, atv_pub)
-        //{
-        //    const key = new elliptic.eddsa('ed25519').keyFromSecret(a);
-
-        //    return key.sign(v_pub + atv_pub).toHex();
-        //}
-
-        //function signature(shared, atv_data, signed)
-        //{
-        //    const cipher = crypto.createCipheriv(
-        //        'aes-128-ctr',
-        //        hexString2ArrayBuffer(pair_verify_aes_key(shared)),
-        //        hexString2ArrayBuffer(pair_verify_aes_iv(shared))
-        //    );
-
-        //    // discard the result of encrypting atv_data.
-        //    cipher.update(hexString2ArrayBuffer(atv_data));
-
-        //    let encrypted = cipher.update(Buffer.from(signed, 'hex'), null, 'hex');
-        //    encrypted += cipher.final('hex');
-
-        //    return encrypted;
-        //}
+    public static byte[] signed(byte[] a, byte[] v_pub, byte[] atv_pub)
+    {
+       var ed = new Ed25519();
+       ed.FromPrivateKey(a);
+       return ed.SignMessage(v_pub.Concat(atv_pub).ToArray());
+    }
+        
+    public static byte[] signature(string shared, string atv_data, byte[] signed)
+    {
+            AesCtr aes = (AesCtr) AesCtr.Create();
+            aes.Key = Utils.Utils.HexStringToByteArray(pair_verify_aes_key(shared));
+            aes.IV = Utils.Utils.HexStringToByteArray(pair_verify_aes_iv(shared));
+            aes.BlockSize = 128;
+            ICryptoTransform cipher = aes.CreateEncryptor(aes.Key, aes.IV);
+            byte[] result = new byte[0];
+            using (MemoryStream ms = new MemoryStream())
+            {
+                using (CryptoStream cs = new CryptoStream(ms, cipher, CryptoStreamMode.Write))
+                {
+                    cs.Write(Convert.FromHexString(atv_data).Concat(signed).ToArray(), 0, atv_data.Length + signed.Length);
+                }
+                
+                byte[] chunk = ms.ToArray();
+                result = result.Concat(chunk).ToArray();
+            }
+        return result;
+    }
 
         //module.exports = {
         //    pair_setup_aes_key,
