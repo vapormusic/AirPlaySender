@@ -530,7 +530,7 @@ namespace APLibrary.AirPlay
 
         public byte[] makeHeadWithURL (string method, DI digestInfo)
         {
-            return this.makeHead(method, "rtsp://" + this.socket?.Client.LocalEndPoint.ToString() + "/" + this.announceId, digestInfo);
+            return this.makeHead(method, "rtsp://" + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "/" + this.announceId, digestInfo);
         }
 
         public void sendNextRequest(int? force_mode = null, DI? di = null)
@@ -789,8 +789,74 @@ namespace APLibrary.AirPlay
                             0x5d, 0x8c, 0x01, 0x2a, 0x0c, 0x7e, 0x1d, 0x4e};
                     request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(auth_fakekey_buf).ToArray();
                     break;
+                case OPTIONS:
+                    request = request.Concat(this.makeHead("OPTIONS", "*", di)).ToArray();
+                    if (this.airplay2)
+                    {
+                        u += "User-Agent: AirPlay/409.16\r\n";
+                        u += "Connection: keep-alive\r\n";
+                    }
+                    u += "Apple-Challenge: SdX9kFJVxgKVMFof/Znj4Q\r\n\r\n";
+                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    break;
+                case OPTIONS2:
+                    request = request.Concat(this.makeHead("OPTIONS", "*", di)).ToArray();
+                    u += this.code_digest;
+                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    break;
+                case ANNOUNCE:
+                    if (this.announceId == null)
+                    {
+                        this.announceId = Utils.Utils.randomInt(10).ToString();
+                    }
 
+                    string body =
+                      "v=0\r\n" +
+                      "o=iTunes " + this.announceId + " 0 IN IP4 " + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "\r\n" +
+                      "s=iTunes\r\n" +
+                      "c=IN IP4 " + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "\r\n" +
+                      "t=0 0\r\n" +
+                      "m=audio 0 RTP/AVP 96\r\n";
+                    if (!this.alacEncoding)
+                    {
+                        body = body + "a=rtpmap:96 L16/44100/2\r\n" +
+                        "a=fmtp:96 352 0 16 40 10 14 2 255 0 0 44100\r\n";
+                    } else {
+                        body = body + "a=rtpmap:96 AppleLossless\r\n" +
+                        "a=fmtp:96 352 0 16 40 10 14 2 255 0 0 44100\r\n";
+                     }
+;
+                    if (this.requireEncryption)
+                    {
+                        body +=
+                          "a=rsaaeskey:" + "VjVbxWcmYgbBbhwBNlCh3K0CMNtWoB844BuiHGUJT51zQS7SDpMnlbBIobsKbfEJ3SCgWHRXjYWf7VQWRYtEcfx7ejA8xDIk5PSBYTvXP5dU2QoGrSBv0leDS6uxlEWuxBq3lIxCxpWO2YswHYKJBt06Uz9P2Fq2hDUwl3qOQ8oXb0OateTKtfXEwHJMprkhsJsGDrIc5W5NJFMAo6zCiM9bGSDeH2nvTlyW6bfI/Q0v0cDGUNeY3ut6fsoafRkfpCwYId+bg3diJh+uzw5htHDyZ2sN+BFYHzEfo8iv4KDxzeya9llqg6fRNQ8d5YjpvTnoeEQ9ye9ivjkBjcAfVw" + "\r\n" +
+                          "a=aesiv:" + "ePRBLI0XN5ArFaaz7ncNZw" + "\r\n";
+                    }
 
+                    request = request.Concat(this.makeHeadWithURL("ANNOUNCE", di)).ToArray(); 
+                    u +=
+                      "Content-Type: application/sdp\r\n" +
+                      "Content-Length: " + body.Length + "\r\n\r\n";
+
+                    u += body;
+                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    //console.log(request);
+                    break;
+                case SETUP:
+                    request = request.Concat(this.makeHeadWithURL("SETUP", di)).ToArray();
+                    u += "Transport: RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;" +
+                      "control_port=" + this.controlPort + ";" +
+                      "timing_port=" + this.timingPort + "\r\n\r\n";
+                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    //console.log(request);
+                    break;
+                case INFO:
+                    request = request.Concat(this.makeHead("GET", "/info", di, true)).ToArray();
+                    u += "User-Agent: AirPlay/409.16\r\n";
+                    u += "Connection: keep-alive\r\n";
+                    u += "CSeq: " + this.nextCSeq() + "\r\n\r\n";
+                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    break;
 
             }
 
