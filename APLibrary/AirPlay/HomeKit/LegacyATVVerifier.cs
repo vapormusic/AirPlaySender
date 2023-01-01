@@ -1,6 +1,5 @@
 ﻿using BitConverter;
 using Dorssel.Security.Cryptography;
-using Microsoft.VisualBasic;
 using Rebex.Security.Cryptography;
 using System;
 using System.Collections.Generic;
@@ -61,14 +60,14 @@ namespace APLibrary.AirPlay.HomeKit
         // ...
         // Public.
 
-        public static string a_pub(byte[] a)
+        public static string a_pub(string a)
         {
             var ed = new Ed25519();
-            ed.FromPrivateKey(a);
+            ed.FromPrivateKey(Convert.FromHexString(a));
             return Convert.ToHexString(ed.GetPublicKey());
         }
 
-        public static Dictionary<string,byte[]> confirm(byte[] a, string K)
+        public static Dictionary<string,string> confirm(string a, string K)
         {
             string key = pair_setup_aes_key(K);
             string iv  = pair_setup_aes_iv(K);
@@ -81,13 +80,13 @@ namespace APLibrary.AirPlay.HomeKit
                 aes.Encrypt(Utils.Utils.HexStringToByteArray(iv), plaintextBytes, ciphertext, tag);
             } ;
 
-            Dictionary<string, byte[]> u = new Dictionary<string, byte[]>();
-            u.Add("epk", ciphertext);
-            u.Add("authTag", tag);
+            Dictionary<string, string> u = new Dictionary<string, string>();
+            u.Add("epk", Convert.ToHexString(ciphertext));
+            u.Add("authTag", Convert.ToHexString(tag));
             return u;
         }
 
-        public static Dictionary<string, byte[]> verifier(byte[] a)
+        public static Dictionary<string, string> verifier(string a)
         {
             var curve = new Curve25519();
             byte[] rndkey = new byte[32];
@@ -100,48 +99,48 @@ namespace APLibrary.AirPlay.HomeKit
             byte[] header = new byte[] {0x01, 0x00, 0x00, 0x00};
             byte[] a_pub_buf = Convert.FromHexString(a_pub(a));
 
-            Dictionary<string, byte[]> u = new Dictionary<string, byte[]>();
-            u.Add("verifierBody", header.Concat(curve.GetPublicKey()).Concat(a_pub_buf).ToArray());
-            u.Add("v_pri", v_pri);
-            u.Add("v_pub", v_pub);
+            Dictionary<string, string> u = new Dictionary<string, string>();
+            u.Add("verifierBody", Convert.ToHexString(header.Concat(curve.GetPublicKey()).Concat(a_pub_buf).ToArray()));
+            u.Add("v_pri", Convert.ToHexString(v_pri));
+            u.Add("v_pub", Convert.ToHexString(v_pub));
 
             return u;
         }
 
-        public static string shared(byte[] v_pri, byte[] atv_pub)
+        public static string shared(string v_pri, string atv_pub)
         {
             var curve = new Curve25519();
-            curve.FromPublicKey(v_pri);           
-            return Convert.ToHexString(curve.GetSharedSecret(atv_pub));
+            curve.FromPublicKey(Convert.FromHexString(v_pri));           
+            return Convert.ToHexString(curve.GetSharedSecret(Convert.FromHexString(atv_pub)));
         }
-
-    public static byte[] signed(byte[] a, byte[] v_pub, byte[] atv_pub)
-    {
-       var ed = new Ed25519();
-       ed.FromPrivateKey(a);
-       return ed.SignMessage(v_pub.Concat(atv_pub).ToArray());
-    }
         
-    public static byte[] signature(string shared, string atv_data, byte[] signed)
-    {
-            AesCtr aes = (AesCtr) AesCtr.Create();
-            aes.Key = Utils.Utils.HexStringToByteArray(pair_verify_aes_key(shared));
-            aes.IV = Utils.Utils.HexStringToByteArray(pair_verify_aes_iv(shared));
-            aes.BlockSize = 128;
-            ICryptoTransform cipher = aes.CreateEncryptor(aes.Key, aes.IV);
-            byte[] result = new byte[0];
-            using (MemoryStream ms = new MemoryStream())
-            {
-                using (CryptoStream cs = new CryptoStream(ms, cipher, CryptoStreamMode.Write))
+        public static string signed(string a, string v_pub, string atv_pub)
+        {
+           var ed = new Ed25519();
+           ed.FromPrivateKey(Convert.FromHexString(a));
+           return Convert.ToHexString((ed.SignMessage(Convert.FromHexString(v_pub).Concat(Convert.FromHexString(atv_pub)).ToArray()));
+        }
+        
+        public static string signature(string shared, string atv_data, string signed)
+        {
+                AesCtr aes = (AesCtr) AesCtr.Create();
+                aes.Key = Utils.Utils.HexStringToByteArray(pair_verify_aes_key(shared));
+                aes.IV = Utils.Utils.HexStringToByteArray(pair_verify_aes_iv(shared));
+                aes.BlockSize = 128;
+                ICryptoTransform cipher = aes.CreateEncryptor(aes.Key, aes.IV);
+                byte[] result = new byte[0];
+                using (MemoryStream ms = new MemoryStream())
                 {
-                    cs.Write(Convert.FromHexString(atv_data).Concat(signed).ToArray(), 0, atv_data.Length + signed.Length);
-                }
+                    using (CryptoStream cs = new CryptoStream(ms, cipher, CryptoStreamMode.Write))
+                    {
+                        cs.Write(Convert.FromHexString(atv_data).Concat(Convert.FromHexString(signed)).ToArray(), 0, atv_data.Length + signed.Length);
+                    }
                 
-                byte[] chunk = ms.ToArray();
-                result = result.Concat(chunk).ToArray();
-            }
-        return result;
-    }
+                    byte[] chunk = ms.ToArray();
+                    result = result.Concat(chunk).ToArray();
+                }
+            return Convert.ToHexString(result);
+        }
 
         //module.exports = {
         //    pair_setup_aes_key,

@@ -51,6 +51,7 @@ namespace APLibrary.AirPlay
 
             this.udpServers = new UDPServers();
             this.audioOut = audioOut;
+            this.udpServers.bind();
             // this.audioOut.emitNeedSync += 
 
             this.host = host;
@@ -117,7 +118,7 @@ namespace APLibrary.AirPlay
         {
             this.audioSocket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
             this.audioSocket.Bind(new IPEndPoint(IPAddress.Any, 0));
-            this.udpServers.bind();
+            //this.udpServers.bind();
             this.doHandshake();
 
         }

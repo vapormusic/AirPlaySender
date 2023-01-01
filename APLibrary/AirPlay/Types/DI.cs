@@ -8,10 +8,10 @@ namespace APLibrary.AirPlay.Types
 {
     public class DI
     {
-        public int? username;
+        public string? username;
         public string realm;
-        public bool? password;
-        public bool? nonce;
+        public string? password;
+        public string? nonce;
 
         public DI()
         {
