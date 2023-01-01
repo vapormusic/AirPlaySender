@@ -29,7 +29,10 @@ using static System.Net.WebRequestMethods;
 namespace APLibrary.AirPlay
 {
     public delegate void EmitEndEvent(string status,string msg);
+    public delegate void EmitPairSuccess();
+    public delegate void EmitReady();
     public delegate void NeedPassword();
+    public delegate void EmitRTSPConfig(RTSPConfig rtspConfig);
     public class RTSPClient
     {
         //TODO: write rtsp.js to c#
@@ -56,12 +59,12 @@ namespace APLibrary.AirPlay
         private Action callback;
         private int? controlPort;
         private int? timingPort;
-        private int? timingDestPort;  
+        private int? timingDestPort;
         private int? eventPort;
         private System.Timers.Timer? heartBeat;
-        private Dictionary<string,string>? pair_verify_1_verifier;
+        private Dictionary<string, string>? pair_verify_1_verifier;
         private byte[] pair_verify_1_signature;
-        private byte[] code_digest;
+        private string code_digest;
         private string authSecret;
         private int mode;
         private string[] dnstxt;
@@ -73,6 +76,7 @@ namespace APLibrary.AirPlay
         private bool transient;
         private bool borkedshp;
         private byte[] privateKey;
+        private byte[] deviceProof;
         private SrpClient? srp;
         private string I = "366B4165DD64AD3A";
         private string P;
@@ -82,15 +86,17 @@ namespace APLibrary.AirPlay
         private string a;
         private byte[] Al;
         private string M1;
+        private SrpSession M1Session;
         private string epk;
         private string authTag;
-        private byte[] _atv_salt;
-        private byte[] _atv_pub_key;
-        private byte[] _hap_genkey;
+        private string _atv_salt;
+        private string _atv_pub_key;
+        private string _hap_genkey;
         private byte[] _hap_encrypteddata;
         private string? pairingId;
         private byte[] K;
-        private byte[] seed ;
+        private byte[] seed;
+        private byte[] sharedSecret;
         private Credentials credentials;
         private byte[] event_credentials;
         private Dictionary<string, byte[]>? verifier_hap_1;
@@ -104,6 +110,9 @@ namespace APLibrary.AirPlay
         private StreamReader srctrl;
         public event EmitEndEvent emitEnd;
         public event NeedPassword emitNeedPassword;
+        public event EmitRTSPConfig emitRTSPConfig;
+        public event EmitPairSuccess emitPairSuccess;
+        public event EmitReady emitReady;
         private const int INFO = -1,
         OPTIONS = 0,
         ANNOUNCE = 1,
@@ -266,7 +275,7 @@ namespace APLibrary.AirPlay
 
         }
 
-        public void ExecRequest(byte[] input ,bool GetResponse){
+        public void ExecRequest(byte[] input, bool GetResponse) {
             if (this.encryptedChannel && this.credentials != null)
             {
                 input = this.credentials.encrypt(input);
@@ -367,7 +376,7 @@ namespace APLibrary.AirPlay
             }
         }
 
-        private void sendHeartBeat() 
+        private void sendHeartBeat()
         {
             if (this.status != PLAYING)
                 return;
@@ -451,7 +460,7 @@ namespace APLibrary.AirPlay
             this.callback = callback;
             this.sendNextRequest();
         }
-        
+
         public int nextCSeq()
         {
             this.cseq += 1;
@@ -488,7 +497,7 @@ namespace APLibrary.AirPlay
                 ClearTimeout(this.timeout);
                 this.timeout = null;
             }
-            
+
             if (this.heartBeat != null)
             {
                 Interval.Stop(this.heartBeat);
@@ -501,7 +510,7 @@ namespace APLibrary.AirPlay
                 this.socket = null;
             }
         }
-        
+
         public byte[] makeHead(string method, string uri, DI? di = null, bool clear = false)
         {
             string head = method + " " + uri + " RTSP/1.0" + "\r\n";
@@ -532,7 +541,7 @@ namespace APLibrary.AirPlay
             return System.Text.Encoding.Unicode.GetBytes(head);
         }
 
-        public byte[] makeHeadWithURL (string method, DI digestInfo)
+        public byte[] makeHeadWithURL(string method, DI digestInfo)
         {
             return this.makeHead(method, "rtsp://" + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "/" + this.announceId, digestInfo);
         }
@@ -575,7 +584,7 @@ namespace APLibrary.AirPlay
                     this.credentials = null;
                     this.verifier_hap_1 = null;
                     this.encryptionKey = null;
-                    
+
                     if (this.needPin || this.airplay2)
                     {
                         request = request.Concat(this.makeHead("POST", "/pair-pin-start", null, true)).ToArray();
@@ -585,7 +594,7 @@ namespace APLibrary.AirPlay
                             u += "User-Agent: AirPlay/409.16\r\n";
                             u += "Connection: keep-alive\r\n";
                             u += "CSeq: " + "0" + "\r\n";
-                            
+
                         }
                         u += "Content-Length:" + 0 + "\r\n\r\n";
                         request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
@@ -598,7 +607,7 @@ namespace APLibrary.AirPlay
                 case PAIR_PIN_SETUP_1:
                     request = request.Concat(this.makeHead("POST", "/pair-setup-pin", null, true)).ToArray();
                     u += "Content-Type: application/x-apple-binary-plist\r\n";
-                    
+
                     using (var memoryStream = new MemoryStream())
                     {
                         BinaryPropertyListWriter bplist = new BinaryPropertyListWriter(memoryStream);
@@ -611,7 +620,7 @@ namespace APLibrary.AirPlay
                         u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
                         request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
                     };
-                    
+
                     break;
                 case PAIR_PIN_SETUP_2:
                     request = request.Concat(this.makeHead("POST", "/pair-setup-pin", null, true)).ToArray();
@@ -657,7 +666,7 @@ namespace APLibrary.AirPlay
                     request = request.Concat(this.makeHead("POST", "/pair-verify", null, true)).ToArray();
                     u += "Content-Type: application/octet-stream\r\n";
                     u += "Content-Length:" + this.pair_verify_1_signature.Length + "\r\n\r\n";
-                    
+
                     request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(this.pair_verify_1_signature).ToArray();
                     break;
                 case PAIR_SETUP_1:
@@ -712,7 +721,7 @@ namespace APLibrary.AirPlay
                     u += "Connection: keep-alive\r\n";
                     u += "X-Apple-HKP: " + this.homekitver + "\r\n";
                     u += "Content-Type: application/octet-stream\r\n";
-                    this.K = Convert.FromHexString(this.srp.DeriveSession(Convert.ToHexString(this._hap_genkey), Convert.ToHexString(this._atv_pub_key), Convert.ToHexString(this._atv_salt), "Pair-Setup", this.password).Key);
+                    this.K = Convert.FromHexString(this.srp.DeriveSession(this._hap_genkey, this._atv_pub_key, this._atv_salt, "Pair-Setup", this.srp.DerivePrivateKey(this._atv_salt, "Pair-Setup", this.password)).Key);
                     this.seed = new byte[32];
                     RandomNumberGenerator rng = RandomNumberGenerator.Create();
                     rng.GetBytes(this.seed);
@@ -835,7 +844,7 @@ namespace APLibrary.AirPlay
                     } else {
                         body = body + "a=rtpmap:96 AppleLossless\r\n" +
                         "a=fmtp:96 352 0 16 40 10 14 2 255 0 0 44100\r\n";
-                     }
+                    }
 ;
                     if (this.requireEncryption)
                     {
@@ -844,7 +853,7 @@ namespace APLibrary.AirPlay
                           "a=aesiv:" + "ePRBLI0XN5ArFaaz7ncNZw" + "\r\n";
                     }
 
-                    request = request.Concat(this.makeHeadWithURL("ANNOUNCE", di)).ToArray(); 
+                    request = request.Concat(this.makeHeadWithURL("ANNOUNCE", di)).ToArray();
                     u +=
                       "Content-Type: application/sdp\r\n" +
                       "Content-Length: " + body.Length + "\r\n\r\n";
@@ -943,27 +952,27 @@ namespace APLibrary.AirPlay
                         bplist.Write(streams);
                         byte[] bpbuf = memoryStream.ToArray();
 
-                        u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";}
+                        u += "Content-Length:" + bpbuf.Length + "\r\n\r\n"; }
                     request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
                     break;
                 case RECORD:
                     if (this.airplay2 != null && this.credentials != null) {
                         var nextSeq = this.audioOut.lastSeq + 10;
-                        var rtpSyncTime = nextSeq* 352 + 2* 44100;
+                        var rtpSyncTime = nextSeq * 352 + 2 * 44100;
                         request = request.Concat(this.makeHead("RECORD", "rtsp://" + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "/" + this.announceId, di, true)).ToArray();
-                        u += "CSeq: "+ ++this.cseq+ "\r\n";
+                        u += "CSeq: " + ++this.cseq + "\r\n";
                         u += "User-Agent: AirPlay/409.16" + "\r\n";
                         u += "Client-Instance: " + this.dacpId + "\r\n";
                         u += "DACP-ID: " + this.dacpId + "\r\n";
-                        u += "Active-Remote: " + this.activeRemote+ "\r\n";
+                        u += "Active-Remote: " + this.activeRemote + "\r\n";
                         u += "X-Apple-ProtocolVersion: 1\r\n";
                         u += "Range: npt=0-\r\n";
-                        u += this.makeRtpInfo()+ "\r\n";
+                        u += this.makeRtpInfo() + "\r\n";
                         request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
                     } else {
                         request = request.Concat(this.makeHeadWithURL("RECORD", di)).ToArray();
                         u += "Range: npt=0-\r\n";
-                        u += this.makeRtpInfo()+ "\r\n";
+                        u += this.makeRtpInfo() + "\r\n";
                         request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
                     }
                     break;
@@ -980,25 +989,25 @@ namespace APLibrary.AirPlay
                     var attenuation =
                               this.volume == 0.0 ?
                               -144.0 :
-                              (-30.0)*(100 - this.volume)/100.0;
+                              (-30.0) * (100 - this.volume) / 100.0;
 
                     string body2 = "volume: " + attenuation.ToString() + "\r\n";
-                    
+
                     request = request.Concat(this.makeHeadWithURL("GET_PARAMETER", di)).ToArray();
                     u +=
                               "Content-Type: text/parameters\r\n" +
                               "Content-Length: " + body2.Length + "\r\n\r\n";
-                    
+
                     u += body2;
                     request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
                     break;
                 case SETPROGRESS:
                     string hms(int seconds) {
-                         return TimeSpan.FromSeconds(seconds).ToString(@"hh\:mm\:ss");
+                        return TimeSpan.FromSeconds(seconds).ToString(@"hh\:mm\:ss");
                     }
-                    int position = (int)(this.starttime + (this.progress) * (int)(Math.Floor((2*44100)/(352/125)/0.71)));
-                    int duration = (int)(this.starttime + (this.duration) * (int)(Math.Floor((2*44100)/(352/125)/0.71)));
-                    string body3 = "progress: " + this.starttime.ToString() +"/"+ position.ToString() + "/"+ duration.ToString() + "\r\n";
+                    int position = (int)(this.starttime + (this.progress) * (int)(Math.Floor((2 * 44100) / (352 / 125) / 0.71)));
+                    int duration = (int)(this.starttime + (this.duration) * (int)(Math.Floor((2 * 44100) / (352 / 125) / 0.71)));
+                    string body3 = "progress: " + this.starttime.ToString() + "/" + position.ToString() + "/" + duration.ToString() + "\r\n";
                     request = request.Concat(this.makeHeadWithURL("SET_PARAMETER", di)).ToArray();
                     u +=
                               "Content-Type: text/parameters\r\n" +
@@ -1008,12 +1017,12 @@ namespace APLibrary.AirPlay
                     break;
                 case SETDAAP:
                     bool daapenc = true;
-                            //daapenc = true
-                    byte[] name = this.daapEncode("minm", this.trackInfo["name"],daapenc);
+                    //daapenc = true
+                    byte[] name = this.daapEncode("minm", this.trackInfo["name"], daapenc);
                     byte[] artist = this.daapEncode("asar", this.trackInfo["artist"], daapenc);
                     byte[] album = this.daapEncode("asal", this.trackInfo["album"], daapenc);
                     byte[][] trackargs = new byte[][] { name, artist, album };
-                    
+
                     byte[] daapInfo = this.daapEncodeList("mlit", daapenc, trackargs);
 
                     request = request.Concat(this.makeHeadWithURL("SET_PARAMETER", di)).ToArray();
@@ -1046,7 +1055,7 @@ namespace APLibrary.AirPlay
         public byte[] daapEncodeList(string field, bool enc, byte[][] args)
         {
             byte[] value = new byte[0];
-            foreach( byte[] i in args)
+            foreach (byte[] i in args)
             {
                 value = value.Concat(i).ToArray();
             };
@@ -1066,10 +1075,29 @@ namespace APLibrary.AirPlay
             return buf;
         }
 
-        public void parsePorts(string headers)
+        public void parsePorts(Dictionary<string,string> headers)
         {
+            // Get port from Transport header with regex
             // server_port=57402;control_port=57324;timing_port=0
-            
+            string portRegex = @"server_port=(\d+);control_port=(\d+);timing_port=(\d+)";
+            Regex r = new Regex(portRegex);
+            Match m = r.Match(headers["Transport"]);
+         
+            if (m.Success)
+            {
+                RTSPConfig rtspConfig = new RTSPConfig();
+                rtspConfig.audioLatency = 50;
+                rtspConfig.requireEncryption = this.requireEncryption;
+                rtspConfig.server_port = int.Parse(m.Groups[1].Value);
+                rtspConfig.control_port = int.Parse(m.Groups[2].Value);
+                rtspConfig.timing_port = int.Parse(m.Groups[3].Value);
+                rtspConfig.credentials = this.credentials;
+
+                emitRTSPConfig?.Invoke(rtspConfig);
+            }
+
+
+
             //string? parsePort(string name, string transport)
             //{
             //    var re = new RegExp(name + "=(\\d+)");
@@ -1105,11 +1133,19 @@ namespace APLibrary.AirPlay
 
         public string parseAuthenticate(string auth, string field)
         {
-            //var re = new RegExp(field + "="([^"]+)""),
-            //    res = re.exec(auth);
+            // Get realm or nonce from WWW-Authenticate header with regex
+            // WWW - Authenticate: Digest realm = "raop", nonce = "ddfd59b4aea7bbbcbbb3b60d3b2768b7"
+            string authRegex = field + "=\"([^\"]+)\"";
+            Regex r = new Regex(authRegex);
+            Match m = r.Match(auth);
+            if (m.Success)
+            {
+                return m.Groups[1].Value;
+            } else
+            {
+                return "";
+            }
 
-            //return res ? res[1] : null;
-            return "";
         }
 
         public void processData(byte[] blob)
@@ -1148,7 +1184,7 @@ namespace APLibrary.AirPlay
                         if (this.debug) Console.WriteLine("nopass");
                         if (this.status == OPTIONS2)
                         {
-                            emitEnd?.Invoke("pair_failed","");
+                            emitEnd?.Invoke("pair_failed", "");
                             this.cleanup("no_password");
                         }
                         return;
@@ -1173,13 +1209,13 @@ namespace APLibrary.AirPlay
                         this.passwordTried = true;
 
                     var auth = headerDict["WWW-Authenticate"];
-                    
+
                     DI di = new DI();
                     di.realm = parseAuthenticate(auth, "realm");
                     di.nonce = parseAuthenticate(auth, "nonce");
                     di.username = "Radioline";
                     di.password = this.password;
-                    this.sendNextRequest(di:di);
+                    this.sendNextRequest(di: di);
                     return;
                 }
 
@@ -1192,9 +1228,9 @@ namespace APLibrary.AirPlay
 
                 if (status != 200)
                 {
-                        if (this.status != SETVOLUME && this.status != SETPEERS && this.status != FLUSH && this.status != RECORD && this.status != GETVOLUME && this.status != SETPROGRESS && this.status != SETDAAP && this.status != SETART)
-                        {
-                            if ((new int[] {PAIR_VERIFY_1,
+                    if (this.status != SETVOLUME && this.status != SETPEERS && this.status != FLUSH && this.status != RECORD && this.status != GETVOLUME && this.status != SETPROGRESS && this.status != SETDAAP && this.status != SETART)
+                    {
+                        if ((new int[] {PAIR_VERIFY_1,
                               PAIR_VERIFY_2,
                               AUTH_SETUP,
                               PAIR_PIN_START,
@@ -1202,14 +1238,14 @@ namespace APLibrary.AirPlay
                               PAIR_PIN_SETUP_2,
                               PAIR_PIN_SETUP_3}).Contains(this.status))
                         {
-                            emitEnd?.Invoke("pair_failed","");
+                            emitEnd?.Invoke("pair_failed", "");
                         }
                         this.cleanup(status.ToString());
                         return;
                     }
                 }
             }
-            
+
             // password was accepted (or not needed)
             this.passwordTried = false;
 
@@ -1246,8 +1282,8 @@ namespace APLibrary.AirPlay
                     // SRP: Compute A and M1.
                     var srpEphemeral = this.srp.GenerateEphemeral();
                     this.a = srpEphemeral.Secret;
-                    this.A = srpEphemeral.Public;            
-                    this.M1 = this.srp.DeriveSession(srpEphemeral.Secret, this.P, this.s, srpEphemeral.Secret, this.B).Proof;
+                    this.A = srpEphemeral.Public;
+                    this.M1 = this.srp.DeriveSession(this.a, this.B, this.s, this.I, this.srp.DerivePrivateKey(this.s, this.I, this.P)).Proof;
                     this.status = PAIR_PIN_SETUP_2;
                     break;
                 case PAIR_PIN_SETUP_2:
@@ -1262,10 +1298,10 @@ namespace APLibrary.AirPlay
                     break;
                 case PAIR_VERIFY_1:
                     string atv_pub = Convert.ToHexString(body.Skip(0).Take(32).ToArray());
-                    string atv_data  = Convert.ToHexString(body.Skip(32).ToArray());
+                    string atv_data = Convert.ToHexString(body.Skip(32).ToArray());
 
-                    string shared    = LegacyATVVerifier.shared(v_pri: this.pair_verify_1_verifier["v_pri"], atv_pub);
-                    string signed    = LegacyATVVerifier.signed(this.authSecret, this.pair_verify_1_verifier["v_pub"], atv_pub);
+                    string shared = LegacyATVVerifier.shared(v_pri: this.pair_verify_1_verifier["v_pri"], atv_pub);
+                    string signed = LegacyATVVerifier.signed(this.authSecret, this.pair_verify_1_verifier["v_pub"], atv_pub);
                     this.pair_verify_1_signature = (new byte[] { 0x00, 0x00, 0x00, 0x00 }).Concat(Convert.FromHexString(LegacyATVVerifier.signature(shared, atv_data, signed))).ToArray();
                     this.status = PAIR_VERIFY_2;
                     break;
@@ -1273,303 +1309,277 @@ namespace APLibrary.AirPlay
                     this.status = this.mode == 2 ? AUTH_SETUP : OPTIONS;
                     break;
                 case PAIR_SETUP_1:
-                    let buf2 = Buffer.from(rawData).slice(rawData.length - parseInt(headers["Content-Length"]), rawData.length)
-      let databuf1 = tlv.decode(buf2);
-                    if (this.debug) console.log(databuf1)
-      if (databuf1[tlv.Tag.BackOff])
-                    {
-                        let backOff = databuf1[tlv.Tag.BackOff];
-                        console.log(backOff)
-        let seconds = Buffer.from(backOff).readInt16LE(0, backOff.byteLength);
+                    Dictionary<byte, byte[]> databuf1 = Tlv.Decode(body);
+                    if (databuf1.ContainsKey(TlvTag.BackOff)) {
+                        byte[] backOff = databuf1[TlvTag.BackOff];
+                        int seconds = EndianBitConverter.LittleEndian.ToInt16(backOff, 0);
 
-                        console.log("You"ve attempt to pair too recently. Try again in " + (seconds) + " seconds.");
+                        Console.WriteLine("You've attempt to pair too recently. Try again in " + (seconds.ToString()) + " seconds.");
 
                     }
-                    if (databuf1[tlv.Tag.ErrorCode])
+                    if (databuf1.ContainsKey(TlvTag.ErrorCode))
                     {
-                        let buffer = databuf1[tlv.Tag.ErrorCode];
-                        console.log("Device responded with error code " + Buffer.from(buffer).readIntLE(0, buffer.byteLength) + ". Try rebooting your Apple TV.");
+                        byte[] buffer = databuf1[TlvTag.ErrorCode];
+                        Console.WriteLine("Device responded with error code " + Convert.ToSByte(buffer).ToString() + ". Try rebooting your Apple TV.");
                     }
-                    if (databuf1[tlv.Tag.PublicKey])
+                    if (databuf1.ContainsKey(TlvTag.PublicKey))
                     {
-                        this._atv_pub_key = databuf1[tlv.Tag.PublicKey]
-                      this._atv_salt = databuf1[tlv.Tag.Salt]
-                    this._hap_genkey = crypto.randomBytes(32);
+                        this._atv_pub_key = Convert.ToHexString(databuf1[TlvTag.PublicKey]);
+                        this._atv_salt = Convert.ToHexString(databuf1[TlvTag.Salt]);
+                        //this._hap_genkey = new byte[32];
+                        //RandomNumberGenerator rng = RandomNumberGenerator.Create();
+                        //rng.GetBytes(this._hap_genkey);
                         if (this.password == null)
                         {
-                            this.password = 3939 // transient
-      }
-                        this.srp = new SrpClient(SRP.params.hap, Buffer.from(this._atv_salt), Buffer.from("Pair-Setup"), Buffer.from(this.password.toString()), Buffer.from(this._hap_genkey), true)
-                    this.srp.setB(this._atv_pub_key)
-                    this.A = this.srp.computeA()
-                    this.M1 = this.srp.computeM1()
-                    this.status = PAIR_SETUP_2}
-                    else
-                    {
-                        this.emit("pair_failed");
+                            this.password = "3939"; // transient
+                        }
+                        string SRP_AP2_N = "FFFFFFFFFFFFFFFFC90FDAA22168C234C4C6628B80DC1CD129024E08" +
+                                "8A67CC74020BBEA63B139B22514A08798E3404DDEF9519B3CD3A431B" +
+                                "302B0A6DF25F14374FE1356D6D51C245E485B576625E7EC6F44C42E9" +
+                                "A637ED6B0BFF5CB6F406B7EDEE386BFB5A899FA5AE9F24117C4B1FE6" +
+                                "49286651ECE45B3DC2007CB8A163BF0598DA48361C55D39A69163FA8" +
+                                "FD24CF5F83655D23DCA3AD961C62F356208552BB9ED529077096966D" +
+                                "670C354E4ABC9804F1746C08CA18217C32905E462E36CE3BE39E772C" +
+                                "180E86039B2783A2EC07A28FB5C55DF06F4C52C9DE2BCBF695581718" +
+                                "3995497CEA956AE515D2261898FA051015728E5A8AAAC42DAD33170D" +
+                                "04507A33A85521ABDF1CBA64ECFB850458DBEF0A8AEA71575D060C7D" +
+                                "B3970F85A6E1E4C7ABF5AE8CDB0933D71E8C94E04A25619DCEE3D226" +
+                                "1AD2EE6BF12FFA06D98A0864D87602733EC86A64521F2B18177B200C" +
+                                "BBE117577A615D6C770988C0BAD946E208E24FA074E5AB3143DB5BFC" +
+                                "E0FD108E4B82D120A93AD2CAFFFFFFFFFFFFFFFF";
+                        var customParams_ap2 = SrpParameters.Create<SHA512>(SRP_AP2_N, "05");
+                        this.srp = new SrpClient(customParams_ap2);
+                        //this.srp = new SrpClient(SRP.params.hap,
+                        //Buffer.from(this._atv_salt), //salt
+                        //Buffer.from("Pair-Setup"), //identity
+                        //Buffer.from(this.password.toString()), //password
+                        //Buffer.from(this._hap_genkey), true) // sec
+                        var srpEphemeral2 = this.srp.GenerateEphemeral();
+                        this._hap_genkey = srpEphemeral2.Secret;
+                        this.A = srpEphemeral2.Public;
+                        this.M1Session = this.srp.DeriveSession(this._hap_genkey, this._atv_pub_key, this._atv_salt, "Pair-Setup", this.srp.DerivePrivateKey(this._atv_salt, "Pair-Setup", this.password));
+                        this.M1 = M1Session.Proof;
+                        this.status = PAIR_SETUP_2;
+                    } else {
+                        this.emitEnd("pair_failed", "");
                         this.cleanup("pair_failed");
                         return;
                     }
                     break;
                 case PAIR_SETUP_2:
-                    let buf3 = Buffer.from(rawData).slice(rawData.length - parseInt(headers["Content-Length"]), rawData.length)
-      let databuf2 = tlv.decode(buf3);
-                    this.deviceProof = databuf2[tlv.Tag.Proof];
+                    Dictionary<byte, byte[]> databuf2 = Tlv.Decode(body);
+                    this.deviceProof = databuf2[TlvTag.Proof];
                     // console.log("DEBUG: Device Proof=" + this.deviceProof.toString("hex"));
-                    this.srp.checkM2(this.deviceProof);
+                    this.srp.VerifySession(this.A, this.M1Session, Convert.ToHexString(this.deviceProof));
                     if (this.transient == true)
                     {
                         this.credentials = new Credentials(
                           "sdsds",
+                          new byte[0],
                           "",
-                          "",
-                          "",
+                          new byte[0],
                           this.seed
                         );
-                        this.credentials.writeKey = enc.HKDF(
-                          "sha512",
-                          Buffer.from("Control-Salt"),
-                          this.srp.computeK(),
-                          Buffer.from("Control-Write-Encryption-Key"),
+                        this.credentials.writeKey = Encryption.HKDF(
+                          Encoding.ASCII.GetBytes("Control-Salt"),
+                          Convert.FromHexString(this.M1Session.Key),
+                          Encoding.ASCII.GetBytes("Control-Write-Encryption-Key"),
                           32
                         );
-                        this.credentials.readKey = enc.HKDF(
-                          "sha512",
-                          Buffer.from("Control-Salt"),
-                          this.srp.computeK(),
-                          Buffer.from("Control-Read-Encryption-Key"),
+                        this.credentials.readKey = Encryption.HKDF(
+                          Encoding.ASCII.GetBytes("Control-Salt"),
+                          Convert.FromHexString(this.M1Session.Key),
+                          Encoding.ASCII.GetBytes("Control-Read-Encryption-Key"),
                           32
                         );
-                        this.encryptedChannel = true
-                      console.log(this.srp.computeK())
-                      this.status = SETUP_AP2_1
+                        this.encryptedChannel = true;
+                        this.status = SETUP_AP2_1;
                     }
                     else
                     {
-                        this.status = PAIR_SETUP_3
+                        this.status = PAIR_SETUP_3;
                     }
                     break;
                 case PAIR_SETUP_3:
-                    let buf4 = Buffer.from(rawData).slice(rawData.length - parseInt(headers["Content-Length"]), rawData.length)
-      let encryptedData = tlv.decode(buf4)[tlv.Tag.EncryptedData];
-                    let cipherText = encryptedData.slice(0, -16);
-                    let hmac = encryptedData.slice(-16);
-                    let decrpytedData = enc.verifyAndDecrypt(cipherText, hmac, null, Buffer.from("PS-Msg06"), this.encryptionKey);
-                    let tlvData = tlv.decode(decrpytedData);
+                    byte[] encryptedData = Tlv.Decode(body)[TlvTag.EncryptedData];
+                    byte[] cipherText = encryptedData.Skip(0).Take(encryptedData.Length - 16).ToArray();
+                    byte[] hmac = encryptedData.Skip(encryptedData.Length - 16).Take(16).ToArray();
+                    byte[] decrpytedData = Encryption.VerifyAndDecrypt(cipherText, hmac, null, Encoding.ASCII.GetBytes("PS-Msg06"), this.encryptionKey);
+                    Dictionary<byte, byte[]> tlvData = Tlv.Decode(decrpytedData);
                     this.credentials = new Credentials(
                        "sdsds",
-                       tlvData[tlv.Tag.Username],
+                       tlvData[TlvTag.Username],
                        this.pairingId,
-                       tlvData[tlv.Tag.PublicKey],
+                       tlvData[TlvTag.PublicKey],
                       this.seed
                      );
                     this.status = PAIR_VERIFY_HAP_1;
                     break;
                 case PAIR_VERIFY_HAP_1:
-                    let buf5 = Buffer.from(rawData).slice(rawData.length - parseInt(headers["Content-Length"]), rawData.length)
-                  let decodedData = tlv.decode(buf5);
-                    let sessionPublicKey = decodedData[tlv.Tag.PublicKey];
-                    let encryptedData1 = decodedData[tlv.Tag.EncryptedData];
+                    Dictionary<byte, byte[]> decodedData = Tlv.Decode(body);
+                    byte[] sessionPublicKey = decodedData[TlvTag.PublicKey];
+                    byte[] encryptedData1 = decodedData[TlvTag.EncryptedData];
 
-                    if (sessionPublicKey.length != 32)
+                    if (sessionPublicKey.Length != 32)
                     {
-                        throw new Error(`sessionPublicKey must be 32 bytes(but was ${ sessionPublicKey.length })`);
+                        throw new Exception(String.Format("sessionPublicKey must be 32 bytes(but was {0})", sessionPublicKey.Length));
                     }
-
-                    let cipherText1 = encryptedData1.slice(0, -16);
-                    let hmac1 = encryptedData1.slice(-16);
+                    byte[] cipherText1 = encryptedData1.Skip(0).Take(encryptedData1.Length - 16).ToArray();
+                    byte[] hmac1 = encryptedData1.Skip(encryptedData1.Length - 16).Take(16).ToArray();
                     // let sharedSecret = curve25519.deriveSharedSecret(this.verifyPrivate, sessionPublicKey);
-                    let sharedSecret = curve25519_js.sharedKey(this.verifyPrivate, sessionPublicKey)
-                  let encryptionKey = enc.HKDF(
-        "sha512",
-        Buffer.from("Pair-Verify-Encrypt-Salt"),
-        sharedSecret,
-        Buffer.from("Pair-Verify-Encrypt-Info"),
-        32
-      );
-                    let decryptedData = enc.verifyAndDecrypt(cipherText1, hmac1, null, Buffer.from("PV-Msg02"), encryptionKey);
-                    this.verifier_hap_1 = {
-                    sessionPublicKey: sessionPublicKey,
-        sharedSecret: sharedSecret,
-        encryptionKey: encryptionKey,
-        pairingData: decryptedData
-                  }
+                    var curve25519 = new Curve25519();
+                    curve25519.FromPrivateKey(this.verifyPrivate);
+                    byte[] sharedSecret = curve25519.GetSharedSecret(sessionPublicKey);
+                    byte[] encryptionKey = Encryption.HKDF(
+                        Encoding.ASCII.GetBytes("Pair-Verify-Encrypt-Salt"),
+                        sharedSecret,
+                        Encoding.ASCII.GetBytes("Pair-Verify-Encrypt-Info"),
+                        32
+                    );
+                    byte[] decryptedData = Encryption.VerifyAndDecrypt(cipherText1, hmac1, null, Encoding.ASCII.GetBytes("PV-Msg02"), encryptionKey);
+                    this.verifier_hap_1 = new Dictionary<string, byte[]>();
+                    this.verifier_hap_1.Add("sessionPublicKey", sessionPublicKey);
+                    this.verifier_hap_1.Add("sharedSecret", sharedSecret);
+                    this.verifier_hap_1.Add("encryptionKey", encryptionKey);
+                    this.verifier_hap_1.Add("pairingData", decryptedData);
                     this.status = PAIR_VERIFY_HAP_2;
                     this.sharedSecret = sharedSecret;
                     break;
                 case PAIR_VERIFY_HAP_2:
-                    let buf6 = Buffer.from(rawData).slice(rawData.length - parseInt(headers["Content-Length"]), rawData.length)
-      this.credentials.readKey = enc.HKDF(
-        "sha512",
-        Buffer.from("Control-Salt"),
-        this.verifier_hap_1.sharedSecret,
-        Buffer.from("Control-Read-Encryption-Key"),
-        32
-      );
-                    this.credentials.writeKey = enc.HKDF(
-                      "sha512",
-                      Buffer.from("Control-Salt"),
-                      this.verifier_hap_1.sharedSecret,
-                      Buffer.from("Control-Write-Encryption-Key"),
+                    this.credentials.readKey = Encryption.HKDF(
+                      Encoding.ASCII.GetBytes("Control-Salt"),
+                      this.sharedSecret,
+                      Encoding.ASCII.GetBytes("Control-Read-Encryption-Key"),
                       32
                     );
-                    if (this.debug) { console.log("write", this.credentials.writeKey)}
-                    if (this.debug) { console.log("buf6", buf6)}
-                    this.encryptedChannel = true
-      this.status = (this.mode == 2 ? AUTH_SETUP : SETUP_AP2_1)
-    break;
+                    this.credentials.writeKey = Encryption.HKDF(
+                      Encoding.ASCII.GetBytes("Control-Salt"),
+                      this.sharedSecret,
+                      Encoding.ASCII.GetBytes("Control-Write-Encryption-Key"),
+                      32
+                    );
+                    //if (this.debug) { console.log("write", this.credentials.writeKey)}
+                    //if (this.debug) { console.log("buf6", buf6)}
+                    this.encryptedChannel = true;
+                    this.status = (this.mode == 2 ? AUTH_SETUP : SETUP_AP2_1);
+                    break;
                 case SETUP_AP2_1:
-                    console.log("timing port parsing")
-      let buf7 = Buffer.from(rawData).slice(rawData.length - parseInt(headers["Content-Length"]), rawData.length)
-      let sa1_bplist = bplistParser.parseBuffer(buf7)
-      this.eventPort = sa1_bplist[0]["eventPort"]
-      if (sa1_bplist[0]["timingPort"])
-                        this.timingDestPort = sa1_bplist[0]["timingPort"]
-      console.log("timing port ok", sa1_bplist[0]["timingPort"])
-      // let rtspConfig1 = {
-      //   audioLatency: 50,
-      //   requireEncryption: false,
-      //   server_port : 22223,
-      //   control_port : this.controlPort,
-      //   timing_port : this.timingPort,
-      //   event_port: this.eventPort,
-      //   credentials : this.credentials
-      // }
-      // this.emit("config", rtspConfig1);
-
-                    // this.eventsocket.bind(3003, this.socket.address().address);
-      this.status = SETPEERS
-    break;
+                    Console.WriteLine("timing port parsing");
+                    NSDictionary sa1_bplist = BinaryPropertyListParser.Parse(body) as NSDictionary;
+                    this.eventPort = (sa1_bplist.Get("eventPort") as NSNumber).ToInt();
+                    if (sa1_bplist.TryGetValue("timingPort", out NSObject timingPort)) {
+                        this.timingDestPort = (sa1_bplist.Get("timingPort") as NSNumber).ToInt(); }
+                    this.status = SETPEERS;
+                    break;
                 case SETUP_AP2_2:
-                    let buf8 = Buffer.from(rawData).slice(rawData.length - parseInt(headers["Content-Length"]), rawData.length)
-      let sa2_bplist = bplistParser.parseBuffer(buf8)
-      let rtspConfig = {
-        audioLatency: 50,
-        requireEncryption: false,
-        server_port: sa2_bplist[0]["streams"][0]["dataPort"],
-        control_port: sa2_bplist[0]["streams"][0]["controlPort"],
-        timing_port: this.timingDestPort ? this.timingDestPort : this.timingPort,
-        credentials: this.credentials
-      }
-            this.timingsocket.close();
-            this.controlsocket.close();
-            this.emit("config", rtspConfig);
-            console.log("goto info")
-      // this.session = 1;
-      this.status = RECORD;
-            // this.emit("ready");
-            break;
-    case SETPEERS:
-            this.status = SETUP_AP2_2;
-            break;
-    case FLUSH:
-            this.status = PLAYING
-      this.emit("pair_success");
-            this.session = "1"
-      console.log("flush")
-      this.emit("ready");
-            // console.log(sa2_bplist[0]["streams"][0]["controlPort"], sa2_bplist[0]["streams"][0]["dataPort"] )
+                    NSDictionary sa2_bplist = BinaryPropertyListParser.Parse(body) as NSDictionary;
+                    NSDictionary stream = (sa2_bplist.Get("streams") as NSArray).First() as NSDictionary;
+                    RTSPConfig rtspConfig = new RTSPConfig();
+                    rtspConfig.audioLatency = 50;
+                    rtspConfig.requireEncryption = false;
+                    rtspConfig.server_port = (sa2_bplist.Get("dataPort") as NSNumber).ToInt();
+                    rtspConfig.control_port = (sa2_bplist.Get("controlPort") as NSNumber).ToInt();
+                    rtspConfig.timing_port = (this.timingDestPort != null) ? this.timingDestPort : this.timingPort;
+                    rtspConfig.credentials = this.credentials;
 
-            break;
-    case INFO:
-            let buf9 = Buffer.from(rawData).slice(rawData.length - parseInt(headers["Content-Length"]), rawData.length)
-      this.status = (this.credentials) ? RECORD : PAIR_SETUP_1
-    break;
-    case GETVOLUME:
-            this.status = RECORD
-    break;
-    case AUTH_SETUP:
-            this.status = this.airplay2 ? SETUP_AP2_1 : OPTIONS
-    break;
-    case OPTIONS:
-            /*
-             * Devices like Apple TV and Zeppelin Air do not support encryption.
-             * Only way of checking that: they do not reply to Apple-Challenge
-             */
-            if (headers["Apple-Response"])
-                this.requireEncryption = true;
-            // console.log("yeah22332",headers["WWW-Authenticate"],response.code)
-            if (headers["WWW-Authenticate"] != null & response.code === 401)
-            {
-                let auth = headers["WWW-Authenticate"];
-                let realm = parseAuthenticate(auth, "realm");
-                let nonce = parseAuthenticate(auth, "nonce");
-                let uri = "*"
-                let user = "iTunes"
-                let methodx = "OPTIONS"
-                let pwd = this.password
-                ha1 = md5norm(`${ user}:${ realm}:${ pwd}`)
-          ha2 = md5norm(`${ methodx}:${ uri}`)
-          di_response = md5(`${ ha1}:${ nonce}:${ ha2}`)
-          this.code_digest = `Authorization: Digest username = "${user}", realm = "${realm}", nonce = "${nonce}", uri = "${uri}", response = "${di_response}" \r\n\r\n`
-          this.status = OPTIONS2;
+                    emitRTSPConfig?.Invoke(rtspConfig);
+                    this.status = RECORD;
+                    break;
+                case SETPEERS:
+                    this.status = SETUP_AP2_2;
+                    break;
+                case FLUSH:
+                    this.status = PLAYING;
+                    emitPairSuccess?.Invoke();
+                    this.session = "1";
+                    emitReady?.Invoke();
+                    break;
+                case INFO:
+                    this.status = (this.credentials != null) ? RECORD : PAIR_SETUP_1;
+                    break;
+                case GETVOLUME:
+                    this.status = RECORD;
+                    break;
+                case AUTH_SETUP:
+                    this.status = this.airplay2 ? SETUP_AP2_1 : OPTIONS;
+                    break;
+                case OPTIONS:
+                    /*
+                     * Devices like Apple TV and Zeppelin Air do not support encryption.
+                     * Only way of checking that: they do not reply to Apple-Challenge
+                     */
+                    if (headerDict.ContainsKey("Apple-Response"))
+                        this.requireEncryption = true;
+                    // console.log("yeah22332",headers["WWW-Authenticate"],response.code)
+                    if (headerDict.ContainsKey("WWW-Authenticate") && status == 401)
+                    {
+                        string auth = headerDict["WWW-Authenticate"];
+                        string realm = parseAuthenticate(auth, "realm");
+                        string nonce = parseAuthenticate(auth, "nonce");
+                        string uri = "*";
+                        string user = "iTunes";
+                        string methodx = "OPTIONS";
+                        string pwd = this.password;
+                        string ha1 = Utils.Utils.CreateMD5(user + ":" + realm + ":" + pwd);
+                        string ha2 = Utils.Utils.CreateMD5(methodx + ":" + uri);
+                        string di_response = Utils.Utils.CreateMD5(ha1 + ":" + nonce + ":" + ha2).ToUpper();
+                        this.code_digest = String.Format("Authorization: Digest username = \"{0}\", realm = \"{1}\", nonce = \"{2}\", uri = \"{3}\", response = \"{4}\" \r\n\r\n", user, realm, nonce, uri, di_response);
+                        this.status = OPTIONS2;
+                    }
+                    else
+                    {
+                        this.status = (this.session != null) ? PLAYING : (this.airplay2 ? PAIR_PIN_START : ANNOUNCE);
+                        if (this.status == ANNOUNCE) { emitPairSuccess?.Invoke(); };
+                    }
+                    break;
+                case OPTIONS2:
+                    /*
+                     * Devices like Apple TV and Zeppelin Air do not support encryption.
+                     * Only way of checking that: they do not reply to Apple-Challenge
+                     */
+                    // if(headers["Apple-Response"])
+                    //   this.requireEncryption = true;
+                    this.status = (this.session != null) ? PLAYING : (this.airplay2 ? SETUP_AP2_1 : ANNOUNCE);
+                    if (this.status == ANNOUNCE) { emitPairSuccess?.Invoke(); };
+                    break;
+                case ANNOUNCE:
+                    this.status = SETUP;
+                    break;
+                case SETUP:
+                    this.status = RECORD;
+                    this.session = headerDict["Session"];
+                    this.parsePorts(headerDict);
+                    break;
+                case RECORD:
+                    if (!this.airplay2)
+                    {
+                        this.session = this.session ?? "1";
+                        emitReady?.Invoke();
+                    };
+                    this.status = SETVOLUME;
+                    break;
+                case SETVOLUME:
+                    this.status = this.airplay2 ? FLUSH : PLAYING;
+                    break;
+                case SETPROGRESS:
+                    this.status = PLAYING;
+                    break;
+                case SETDAAP:
+                    this.status = PLAYING;
+                    break;
+
+                case SETART:
+                    this.status = PLAYING;
+                    break;
             }
-            else
-            {
-
-                this.status = this.session ? PLAYING : (this.airplay2 ? PAIR_PIN_START : ANNOUNCE);
-                if (this.status == ANNOUNCE) { this.emit("pair_success")};
+            if (this.callback != null) {
+                this.callback();
             }
-
-            break;
-    case OPTIONS2:
-            /*
-             * Devices like Apple TV and Zeppelin Air do not support encryption.
-             * Only way of checking that: they do not reply to Apple-Challenge
-             */
-            // if(headers["Apple-Response"])
-            //   this.requireEncryption = true;
-            this.status = this.session ? PLAYING : (this.airplay2 ? SETUP_AP2_1 : ANNOUNCE);
-            if (this.status == ANNOUNCE) { this.emit("pair_success")};
-
-
-            break;
-    case ANNOUNCE:
-            this.status = SETUP;
-            break;
-
-    case SETUP:
-            this.status = RECORD;
-            this.session = headers["Session"];
-            this.parsePorts(headers);
-            break;
-
-    case RECORD:
-            if (!this.airplay2)
-            {
-                this.session = this.session ?? "1"
-            this.emit("ready")};
-            this.status = SETVOLUME;
-            break;
-
-    case SETVOLUME:
-            this.status = this.airplay2 ? FLUSH : PLAYING;
-            break;
-    case SETPROGRESS:
-            this.status = PLAYING;
-            break;
-    case SETDAAP:
-            this.status = PLAYING;
-            break;
-
-    case SETART:
-            this.status = PLAYING;
-            break;
+            this.sendNextRequest();
         }
 
-  if (this.callback != null) {
-            this.callback();
-        }
-
-  this.sendNextRequest();
-}
 
 
-
-
-
-
-}
 
     }
 

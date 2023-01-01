@@ -118,7 +118,7 @@ namespace APLibrary.AirPlay.HomeKit
         {
            var ed = new Ed25519();
            ed.FromPrivateKey(Convert.FromHexString(a));
-           return Convert.ToHexString((ed.SignMessage(Convert.FromHexString(v_pub).Concat(Convert.FromHexString(atv_pub)).ToArray()));
+           return Convert.ToHexString((ed.SignMessage(Convert.FromHexString(v_pub).Concat(Convert.FromHexString(atv_pub)).ToArray())));
         }
         
         public static string signature(string shared, string atv_data, string signed)
