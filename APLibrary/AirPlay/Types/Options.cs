@@ -13,7 +13,9 @@
         public bool airplay2;
         public bool? needPin;
         public bool? borkedshp;
-        
+        public int? volume;
+        public string? password;
+
         public AirTunesOptions()
         {
             

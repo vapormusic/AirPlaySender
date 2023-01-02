@@ -33,18 +33,19 @@ namespace APLibrary.AirPlay
         private string[] txt;
         private bool needPassword;
         private bool requireEncryption;
-        private string needPin;
+        private bool needPin;
         private Socket audioSocket;
         private EndPoint audioSocketEndPoint;
         public string status;
         private bool audioCallbackRunning;
         public event DeviceStatusEvent emitDeviceStatus;
         private const int RTP_HEADER_SIZE = 12;
-        public int audioLatency;
-        public int serverPort;
+        public int? audioLatency;
+        public int? serverPort;
         public int? controlPort;
-        public int timingPort;
-        private Credentials credentials;
+        public int? timingPort;
+        private Credentials? credentials;
+        private RTSPClient rtsp;
 
         public AirTunesDevice(string host, AudioOut audioOut, AirTunesOptions options, int mode, string[] txt)
         {
@@ -66,50 +67,56 @@ namespace APLibrary.AirPlay
             this.alacEncoding = options?.alacEncoding ?? true;
             this.txt = txt;
             audioSocketEndPoint = new IPEndPoint(IPAddress.Parse(host), port);
-            //var transpiled = JsonConvert.DeserializeObject<T>(json);
-            //let a = this.txt.filter((u) => String(u).startsWith('et='))
-            //if((a[0] ?? "").includes('4'))
-            //            {
-            //                this.mode = 2;
-            //            }
-            //            let b = this.txt.filter((u) => String(u).startsWith('cn='))
-            //  if((b[0] ?? "").includes('0'))
-            //            {
-            //                this.alacEncoding = false;
-            //            }
-            //            let c = this.txt.filter((u) => String(u).startsWith('sf='))
-            //  this.statusflags = c[0] ? parseInt(c[0].substring(3)).toString(2).split('') : []
-            //  if(c.length == 0)
-            //            {
-            //                c = this.txt.filter((u) => String(u).startsWith('flags='))
-            //      this.statusflags = c[0] ? parseInt(c[0].substring(6)).toString(2).split('') : []
-            //  }
-            //this.needPassword = false;
-            //this.needPin = false;
-            //if(this.statusflags != [])
-            //{
-            //    let PasswordRequired =(this.statusflags[this.statusflags.length - 1 - 7] == '1')
-            //  let PinRequired =(this.statusflags[this.statusflags.length - 1 - 3] == '1')
-            //  let OneTimePairingRequired =(this.statusflags[this.statusflags.length - 1 - 9] == '1')
-            //  console.log('needPss', PasswordRequired, PinRequired, OneTimePairingRequired)
-            //  this.needPassword =(PasswordRequired || PinRequired || OneTimePairingRequired)
-            //  this.needPin =(PinRequired || OneTimePairingRequired)
-            //  console.log('needPss', this.needPassword)
-            //}
-            //console.log("needPin", this.needPin)
-            //console.log("mode-atv", this.mode)
-            //console.log("alacEncoding", this.alacEncoding)
+
+            //get txt starts with et= and check whether it contains 4
+            //if yes, then set mode to 2
+            var et = txt.Where(x => x.StartsWith("et=")).FirstOrDefault();
+            if (et != null && et.Contains("4"))
+            {
+                this.mode = 2;
+            }
+
+            var cn = txt.Where(x => x.StartsWith("cn=")).FirstOrDefault();
+            if (cn != null && cn.Contains("0"))
+            {
+                this.alacEncoding = false;
+            }
+            //get sf that can starts with sf= or flags=
+            var sf = txt.Where(x => x.StartsWith("sf=") || x.StartsWith("flags=")).FirstOrDefault();
+            // Get statusflag , convert hexstring (e.g. 0x3343) to binary and split into array
+            if (sf != null)
+            {             
+                var hex = sf.Substring(sf.IndexOf('=') + 1);
+                var binary = Convert.ToString(Convert.ToInt32(hex, 16), 2);
+                this.statusflags = binary.ToCharArray().Select(x => x.ToString()).ToArray();
+            }
+            this.needPassword = false;
+            this.needPin = false;
+            if (this.statusflags != null && this.statusflags.Length > 0)
+            {
+                bool PasswordRequired = (this.statusflags[this.statusflags.Length - 1 - 7] == "1");
+                bool PinRequired = (this.statusflags[this.statusflags.Length - 1 - 3] == "1");
+                bool OneTimePairingRequired = (this.statusflags[this.statusflags.Length - 1 - 9] == "1");
+                Console.WriteLine("needPss", PasswordRequired, PinRequired, OneTimePairingRequired);
+                this.needPassword = (PasswordRequired || PinRequired || OneTimePairingRequired);
+                this.needPin = (PinRequired || OneTimePairingRequired);
+                Console.WriteLine("needPss", this.needPassword);
+            }
+            Console.WriteLine("needPin", this.needPin);
+            Console.WriteLine("mode-atv", this.mode);
+            Console.WriteLine("alacEncoding", this.alacEncoding);
+
+            var APOptions = new AirTunesOptions();
+            APOptions.alacEncoding = this.alacEncoding;
+            APOptions.mode = this.mode;
+            APOptions.needPassword = this.needPassword;
+            APOptions.needPin = this.needPin;
+            APOptions.debug = options.debug;
+            APOptions.txt = this.txt;
 
 
-            //this.rtsp = new RTSP.Client(options.volume || 50, options.password || null, audioOut,
-            //    {
-            //    mode: this.mode,
-            //    txt: this.txt,
-            //    alacEncoding: this.alacEncoding,
-            //    needPassword: this.needPassword,
-            //    needPin: this.needPin,
-            //    debug: options.debug
-            //  });
+            this.rtsp = new RTSPClient(options.volume ?? 50, options.password ?? null, audioOut, APOptions);
+
             //this.audioCallback = null;
             //this.encoder = [];
         }
@@ -129,41 +136,47 @@ namespace APLibrary.AirPlay
             audioSocket.SendTo(airTunes, audioSocketEndPoint);
         }
 
+
+        void emitRTSPConfig(RTSPConfig setup)
+        {
+            this.audioLatency = setup.audioLatency;
+            this.requireEncryption = setup.requireEncryption;
+            this.serverPort = setup.server_port;
+            this.controlPort = setup.control_port;
+            this.timingPort = setup.timing_port;
+        }
+
+        void emitReady()
+        {
+            this.relayAudio();
+        }
+
+        void emitPairSuccess()
+        {
+            this.emitDeviceStatus?.Invoke("pair_success");
+        }
+
+        void emitNeedPassword()
+        {
+            this.emitDeviceStatus?.Invoke("need_password");
+        }
+
+        void emitEnd(string status, string msg)
+        {
+            this.CleanUp();
+            this.emitDeviceStatus?.Invoke(status);
+
+        }
         public void doHandshake()
         {
-            //this.rtsp.on('config', function(setup) {
-            //    self.audioLatency = setup.audioLatency;
-            //    self.requireEncryption = setup.requireEncryption;
-            //    self.serverPort = setup.server_port;
-            //    self.controlPort = setup.control_port;
-            //    self.timingPort = setup.timing_port;
-            //});
+            this.rtsp.emitEnd += emitEnd;
+            this.rtsp.emitNeedPassword += emitNeedPassword;
+            this.rtsp.emitPairSuccess += emitPairSuccess;
+            this.rtsp.emitReady += emitReady;
+            this.rtsp.emitRTSPConfig += emitRTSPConfig;
 
-            //this.rtsp.on('ready', function() {
-            //    self.relayAudio();
-            //});
 
-            //this.rtsp.on('need_password', function() {
-            //    self.emit('status', 'need_password');
-            //});
-
-            //this.rtsp.on('pair_failed', function() {
-            //    self.emit('status', 'pair_failed');
-            //});
-
-            //this.rtsp.on('pair_success', function() {
-            //    self.emit('status', 'pair_success');
-            //});
-
-            //this.rtsp.on('end', function(err) {
-            //    console.log(err);
-            //    self.cleanup();
-
-            //    if(err !== 'stopped')
-            //        self.emit(err);
-            //});
-
-            //this.rtsp.startHandshake(this.udpServers, this.host, this.port);
+            this.rtsp.startHandshake(this.udpServers, this.host, this.port.ToString());
         }
 
         public void relayAudio()
@@ -189,6 +202,12 @@ namespace APLibrary.AirPlay
 
             }
 
+            this.rtsp.emitEnd -= emitEnd;
+            this.rtsp.emitNeedPassword -= emitNeedPassword;
+            this.rtsp.emitPairSuccess -= emitPairSuccess;
+            this.rtsp.emitReady -= emitReady;
+            this.rtsp.emitRTSPConfig -= emitRTSPConfig;
+
             udpServers.Close();
         }
 
@@ -211,33 +230,33 @@ namespace APLibrary.AirPlay
             //        cb();
             //});
 
-            //this.rtsp.teardown();
+            this.rtsp.teardown();
         }
 
-        public void setVolume(double volume, Action callback)
+        public void setVolume(int volume, Action callback)
         {
-            // this.rtsp.setVolume(volume, callback);
+            this.rtsp.setVolume(volume, callback);
         }
 
         public void setTrackInfo(string name, string artist, string album, Action callback)
         {
-            //  this.rtsp.setTrackInfo(name, artist, album, callback);
+            this.rtsp.setTrackInfo(name, artist, album, callback);
         }
 
         public void setArtwork(byte[] art, string contentType, Action callback)
         {
 
-            // this.rtsp.setArtwork(art, contentType, callback);
+            this.rtsp.setArtwork(art, contentType, callback);
         }
 
         public void setPasscode(string password)
         {
-            //  this.rtsp.setPasscode(password);
+            this.rtsp.setPasscode(password);
         }
 
         public void setProgress(int progress, int duration, Action callback)
         {
-            // this.rtsp.setProgress(progress, duration, callback);
+            this.rtsp.setProgress(progress, duration, callback);
         }
 
         private byte[] makeAirTunesPacket(Packet packet, bool requireEncryption, bool alacEncoding = true, Credentials? credentials = null)

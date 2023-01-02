@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 
 namespace APLibrary.AirPlay
 {
+    public delegate void BufferStatusEvent(string status);
     public class CircularBuffer
     {
         private int WAITING = 0,
@@ -22,6 +23,7 @@ namespace APLibrary.AirPlay
         private int currentSize;
         private int status;
         private PacketPool packetPool;
+        public BufferStatusEvent? emitBufferStatus;
 
         public CircularBuffer(int packetsInBuffer, int size)
         {
@@ -47,12 +49,14 @@ namespace APLibrary.AirPlay
             
             if (this.status == WAITING)
             {
+                emitBufferStatus?.Invoke("buffering");
                 // this.emit('status','buffering')
                 this.status = FILLING;
             }
             
             if (this.status == FILLING && this.currentSize > this.maxSize / 2)
             {
+                emitBufferStatus?.Invoke("playing");
                 // this.emit('status','playing')
                 this.status = NORMAL;
             }
@@ -80,6 +84,7 @@ namespace APLibrary.AirPlay
                 if (this.status != FILLING && this.status != WAITING)
                 {
                     this.status = FILLING;
+                    emitBufferStatus?.Invoke("buffering");
                     //this.emit('status', 'buffering');
                 }
             }
@@ -123,6 +128,7 @@ namespace APLibrary.AirPlay
                 {
                     this.status = ENDED;
                     this.currentSize = 0;
+                    emitBufferStatus?.Invoke("end");
                     // this.emit('status','end')
 
                 }
@@ -130,6 +136,7 @@ namespace APLibrary.AirPlay
                 if (this.status == DRAINING && this.currentSize < this.maxSize / 2)
                 {
                     this.status = NORMAL;
+                    emitBufferStatus?.Invoke("drain");
                     // this.emit('drain');
                 }
             }
@@ -142,5 +149,22 @@ namespace APLibrary.AirPlay
             
             return packet;
         }
+
+        public void End()
+        {
+            // flush the buffer if it was filling
+            if (this.status == FILLING)
+                emitBufferStatus?.Invoke("playing");
+
+            this.status = ENDING;
+        }
+
+        public void Reset()
+        {
+            this.buffers = new List<byte[]>();
+            this.currentSize = 0;
+            this.status = WAITING;
+        }
+
     }
 }

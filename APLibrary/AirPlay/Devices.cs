@@ -87,8 +87,8 @@ namespace APLibrary.AirPlay
 
             return dev;
          }
-
-         public void setVolume(string key, double volume, Action callback)
+        
+         public void setVolume(string key, int volume, Action callback)
          {
             var dev = this.devices[key];
 
