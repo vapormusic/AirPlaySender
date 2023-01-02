@@ -143,6 +143,37 @@ namespace APLibrary.AirPlay
         FLUSH = 26,
         GETVOLUME = 27,
         SETPROGRESS = 28;
+        
+        private string[] rtsp_methods = new string[] {"INFO",
+          "OPTIONS",
+          "ANNOUNCE",
+          "SETUP",
+          "RECORD",
+          "SETVOLUME",
+          "PLAYING",
+          "TEARDOWN",
+          "CLOSED",
+          "SETDAAP",
+          "SETART",
+          "PAIR_VERIFY_1",
+          "PAIR_VERIFY_2",
+          "OPTIONS2",
+          "AUTH_SETUP",
+          "PAIR_PIN_START",
+          "PAIR_PIN_SETUP_1",
+          "PAIR_PIN_SETUP_2",
+          "PAIR_PIN_SETUP_3",
+          "PAIR_SETUP_1",
+          "PAIR_SETUP_2",
+          "PAIR_SETUP_3",
+          "PAIR_VERIFY_HAP_1",
+          "PAIR_VERIFY_HAP_2",
+          "SETUP_AP2_1",
+          "SETUP_AP2_2",
+          "SETPEERS",
+          "FLUSH",
+          "GETVOLUME",
+          "SETPROGRESS"};
 
         public RTSPClient(int volume, string password, AudioOut audioOut, AirTunesOptions options)
         {
@@ -233,15 +264,15 @@ namespace APLibrary.AirPlay
         {
             //var self = this;
             // this.startTimeout();
-            this.controlPort = ((IPEndPoint)udpServers.controlEndPoint).Port;
-            this.timingPort = ((IPEndPoint)udpServers.timingEndPoint).Port;
+            this.controlPort = ((IPEndPoint)udpServers.controlSocket.LocalEndPoint).Port;
+            this.timingPort = ((IPEndPoint)udpServers.timingSocket.LocalEndPoint).Port;
             this.hostip = host;
 
             this.socket = new TcpClient();
             this.socket.ReceiveTimeout = 400000000;
             this.socket.SendTimeout = 400000000;
             this.socket.ConnectAsync(host, int.Parse(port)).ContinueWith(task => {
-
+                Console.WriteLine("OKAY" + host + port);
                 nsctrl = this.socket.GetStream();
                 srctrl = new StreamReader(nsctrl);
                 // this.clearTimeout();
@@ -276,6 +307,9 @@ namespace APLibrary.AirPlay
         }
 
         public void ExecRequest(byte[] input, bool GetResponse) {
+            Console.WriteLine("GetResponse: " + GetResponse.ToString());
+            Console.WriteLine("Current status:" + rtsp_methods[this.status+1]);
+            Console.WriteLine(Encoding.UTF8.GetString(input));
             if (this.encryptedChannel && this.credentials != null)
             {
                 input = this.credentials.encrypt(input);
@@ -285,9 +319,9 @@ namespace APLibrary.AirPlay
             if (!GetResponse)
                 return;
 
-            byte[] res = null;
+            byte[] res;
             int lastRead = 0;
-
+            
             using (MemoryStream ms = new MemoryStream())
             {
                 byte[] buffer = new byte[4096];
@@ -295,15 +329,20 @@ namespace APLibrary.AirPlay
                 {
                     lastRead = nsctrl.Read(buffer, 0, buffer.Length);
                     ms.Write(buffer, 0, lastRead);
-                } while (lastRead > 0);
-
+                } while (lastRead > buffer.Length);
                 res = ms.ToArray();
+                if (this.encryptedChannel && this.credentials != null)
+                {
+                    res = this.credentials.decrypt(res);
+                }
+                Console.WriteLine("Received:");
+                Console.WriteLine(Encoding.UTF8.GetString(res));
+                processData(res);
             }
-            if (this.encryptedChannel && this.credentials != null)
-            {
-                res = this.credentials.decrypt(res);
-            }
-            processData(res);
+
+
+
+
         }
 
         //private void startTimeout()
@@ -538,12 +577,12 @@ namespace APLibrary.AirPlay
                   "response=\"" + diResponse + "\"\r\n";
             }
 
-            return System.Text.Encoding.Unicode.GetBytes(head);
+            return System.Text.Encoding.UTF8.GetBytes(head);
         }
 
         public byte[] makeHeadWithURL(string method, DI digestInfo)
         {
-            return this.makeHead(method, "rtsp://" + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "/" + this.announceId, digestInfo);
+            return this.makeHead(method, "rtsp://" + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.MapToIPv4().ToString() + "/" + this.announceId, digestInfo);
         }
 
         public string makeRtpInfo()
@@ -584,7 +623,7 @@ namespace APLibrary.AirPlay
                     this.credentials = null;
                     this.verifier_hap_1 = null;
                     this.encryptionKey = null;
-
+                    Console.WriteLine("HMM");
                     if (this.needPin || this.airplay2)
                     {
                         request = request.Concat(this.makeHead("POST", "/pair-pin-start", null, true)).ToArray();
@@ -597,7 +636,7 @@ namespace APLibrary.AirPlay
 
                         }
                         u += "Content-Length:" + 0 + "\r\n\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     } else
                     {
                         emitNeedPassword?.Invoke();
@@ -618,7 +657,7 @@ namespace APLibrary.AirPlay
                         byte[] bpbuf = memoryStream.ToArray();
 
                         u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
                     };
 
                     break;
@@ -635,7 +674,7 @@ namespace APLibrary.AirPlay
                         byte[] bpbuf = memoryStream.ToArray();
 
                         u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
                     };
                     break;
                 case PAIR_PIN_SETUP_3:
@@ -651,7 +690,7 @@ namespace APLibrary.AirPlay
                         byte[] bpbuf = memoryStream.ToArray();
 
                         u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
                     };
                     break;
                 case PAIR_VERIFY_1:
@@ -660,14 +699,14 @@ namespace APLibrary.AirPlay
                     this.pair_verify_1_verifier = LegacyATVVerifier.verifier(this.authSecret);
                     u += "Content-Length:" + this.pair_verify_1_verifier["verifierBody"].Length + "\r\n\r\n";
 
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(Convert.FromHexString(this.pair_verify_1_verifier["verifierBody"])).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(Convert.FromHexString(this.pair_verify_1_verifier["verifierBody"])).ToArray();
                     break;
                 case PAIR_VERIFY_2:
                     request = request.Concat(this.makeHead("POST", "/pair-verify", null, true)).ToArray();
                     u += "Content-Type: application/octet-stream\r\n";
                     u += "Content-Length:" + this.pair_verify_1_signature.Length + "\r\n\r\n";
 
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(this.pair_verify_1_signature).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(this.pair_verify_1_signature).ToArray();
                     break;
                 case PAIR_SETUP_1:
                     request = request.Concat(this.makeHead("POST", "/pair-setup", null, true)).ToArray();
@@ -678,25 +717,26 @@ namespace APLibrary.AirPlay
                     if (this.transient == true)
                     {
                         Dictionary<byte, byte[]> dic1 = new Dictionary<byte, byte[]>();
-                        dic1.Add(TlvTag.Sequence, EndianBitConverter.LittleEndian.GetBytes(0x01));
-                        dic1.Add(TlvTag.PairingMethod, EndianBitConverter.LittleEndian.GetBytes(0x00));
-                        dic1.Add(TlvTag.Flags, EndianBitConverter.LittleEndian.GetBytes(0x00000010));
+                        Console.WriteLine(new byte[] { 0x00000010 }.Length);
+                        dic1.Add(TlvTag.Sequence, new byte[] { 0x01 });
+                        dic1.Add(TlvTag.PairingMethod, new byte[] { 0x00 });
+                        dic1.Add(TlvTag.Flags, new byte[] { 0x00000010 });
                         byte[] ps1x = Tlv.Encode(dic1);
 
                         u += "Content-Length: " + ps1x.Length + "\r\n";
                         u += "Content-Type: application/octet-stream" + "\r\n\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(ps1x).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(ps1x).ToArray();
                     }
                     else
                     {
                         Dictionary<byte, byte[]> dic2 = new Dictionary<byte, byte[]>();
-                        dic2.Add(TlvTag.PairingMethod, EndianBitConverter.LittleEndian.GetBytes(0x00));
-                        dic2.Add(TlvTag.Sequence, EndianBitConverter.LittleEndian.GetBytes(0x01));
-                        dic2.Add(TlvTag.Flags, EndianBitConverter.LittleEndian.GetBytes(0x00000010));
+                        dic2.Add(TlvTag.PairingMethod, new byte[] { 0x00 });
+                        dic2.Add(TlvTag.Sequence, new byte[] { 0x01 });
+                        dic2.Add(TlvTag.Flags, new byte[] { 0x00000010 });
                         byte[] ps2x = Tlv.Encode(dic2);
-                        u += "Content-Length: " + "6" + "\r\n";
+                        u += "Content-Length: " + ps2x.Length + "\r\n";
                         u += "Content-Type: application/octet-stream" + "\r\n\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(ps2x).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(ps2x).ToArray();
                     }
                     break;
                 case PAIR_SETUP_2:
@@ -707,12 +747,12 @@ namespace APLibrary.AirPlay
                     u += "X-Apple-HKP: " + this.homekitver + "\r\n";
                     u += "Content-Type: application/octet-stream\r\n";
                     var dic = new Dictionary<byte, byte[]>();
-                    dic.Add(TlvTag.Sequence, EndianBitConverter.LittleEndian.GetBytes(0x03));
+                    dic.Add(TlvTag.Sequence, new byte[] { 0x03 });
                     dic.Add(TlvTag.PublicKey, Convert.FromHexString(this.A));
                     dic.Add(TlvTag.Proof, Convert.FromHexString(this.M1));
                     var ps2 = Tlv.Encode(dic);
                     u += "Content-Length: " + ps2.Length + "\r\n\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(ps2).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(ps2).ToArray();
                     break;
                 case PAIR_SETUP_3:
                     request = request.Concat(this.makeHead("POST", "/pair-setup", null, true)).ToArray();
@@ -754,7 +794,7 @@ namespace APLibrary.AirPlay
                     dic3b.Add(TlvTag.EncryptedData, encryptedTLV.Concat(encryptedTLVhmac).ToArray());
                     byte[] ps3xb = Tlv.Encode(dic3b);
                     u += "Content-Length: " + ps3xb.Length + "\r\n\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(ps3xb).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(ps3xb).ToArray();
                     break;
                 case PAIR_VERIFY_HAP_1:
                     request = request.Concat(this.makeHead("POST", "/pair-setup", null, true)).ToArray();
@@ -772,7 +812,7 @@ namespace APLibrary.AirPlay
                     dic4.Add(TlvTag.PublicKey, this.verifyPublic);
                     byte[] ps4 = Tlv.Encode(dic4);
                     u += "Content-Length: " + ps4.Length + "\r\n\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(ps4).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(ps4).ToArray();
                     break;
                 case PAIR_VERIFY_HAP_2:
                     request = request.Concat(this.makeHead("POST", "/pair-setup", null, true)).ToArray();
@@ -797,7 +837,7 @@ namespace APLibrary.AirPlay
                     dic5b.Add(TlvTag.EncryptedData, encryptedTLV1.Concat(encryptedTLV1Hmac).ToArray());
                     byte[] ps5b = Tlv.Encode(dic5b);
                     u += "Content-Length: " + ps5b.Length + "\r\n\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(ps5b).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(ps5b).ToArray();
                     break;
                 case AUTH_SETUP:
                     request = request.Concat(this.makeHead("POST", "/auth-setup", di)).ToArray();
@@ -807,7 +847,7 @@ namespace APLibrary.AirPlay
                             0x4c, 0xb6, 0x8a, 0x63, 0x30, 0x03, 0x82, 0x07,
                             0xa9, 0x4d, 0xbd, 0x50, 0xd8, 0xaa, 0x46, 0x5b,
                             0x5d, 0x8c, 0x01, 0x2a, 0x0c, 0x7e, 0x1d, 0x4e};
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(auth_fakekey_buf).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(auth_fakekey_buf).ToArray();
                     break;
                 case OPTIONS:
                     request = request.Concat(this.makeHead("OPTIONS", "*", di)).ToArray();
@@ -817,12 +857,12 @@ namespace APLibrary.AirPlay
                         u += "Connection: keep-alive\r\n";
                     }
                     u += "Apple-Challenge: SdX9kFJVxgKVMFof/Znj4Q\r\n\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     break;
                 case OPTIONS2:
                     request = request.Concat(this.makeHead("OPTIONS", "*", di)).ToArray();
                     u += this.code_digest;
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     break;
                 case ANNOUNCE:
                     if (this.announceId == null)
@@ -832,9 +872,9 @@ namespace APLibrary.AirPlay
 
                     string body =
                       "v=0\r\n" +
-                      "o=iTunes " + this.announceId + " 0 IN IP4 " + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "\r\n" +
+                      "o=iTunes " + this.announceId + " 0 IN IP4 " + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.MapToIPv4().ToString() + "\r\n" +
                       "s=iTunes\r\n" +
-                      "c=IN IP4 " + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "\r\n" +
+                      "c=IN IP4 " + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.MapToIPv4().ToString() + "\r\n" +
                       "t=0 0\r\n" +
                       "m=audio 0 RTP/AVP 96\r\n";
                     if (!this.alacEncoding)
@@ -859,7 +899,7 @@ namespace APLibrary.AirPlay
                       "Content-Length: " + body.Length + "\r\n\r\n";
 
                     u += body;
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     //console.log(request);
                     break;
                 case SETUP:
@@ -867,7 +907,7 @@ namespace APLibrary.AirPlay
                     u += "Transport: RTP/AVP/UDP;unicast;interleaved=0-1;mode=record;" +
                       "control_port=" + this.controlPort + ";" +
                       "timing_port=" + this.timingPort + "\r\n\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     //console.log(request);
                     break;
                 case INFO:
@@ -875,7 +915,7 @@ namespace APLibrary.AirPlay
                     u += "User-Agent: AirPlay/409.16\r\n";
                     u += "Connection: keep-alive\r\n";
                     u += "CSeq: " + this.nextCSeq() + "\r\n\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     break;
                 case SETUP_AP2_1:
                     if (this.announceId == null)
@@ -896,7 +936,7 @@ namespace APLibrary.AirPlay
                         byte[] bpbuf = memoryStream.ToArray();
 
                         u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
                     };
                     break;
                 case SETPEERS:
@@ -907,18 +947,18 @@ namespace APLibrary.AirPlay
                         BinaryPropertyListWriter bplist = new BinaryPropertyListWriter(memoryStream);
                         NSArray dict = new NSArray(2);
                         dict.SetValue(0, this.hostip);
-                        dict.SetValue(1, ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString());
+                        dict.SetValue(1, ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.MapToIPv4().ToString());
                         bplist.Write(dict);
                         byte[] bpbuf = memoryStream.ToArray();
 
                         u += "Content-Length:" + bpbuf.Length + "\r\n\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(bpbuf).ToArray();
                     };
                     break;
                 case FLUSH:
                     request = request.Concat(this.makeHeadWithURL("FLUSH", di)).ToArray();
                     u += this.makeRtpInfo() + "\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     break;
                 case SETUP_AP2_2:
                     if (this.announceId == null)
@@ -953,13 +993,13 @@ namespace APLibrary.AirPlay
                         byte[] bpbuf = memoryStream.ToArray();
 
                         u += "Content-Length:" + bpbuf.Length + "\r\n\r\n"; }
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     break;
                 case RECORD:
                     if (this.airplay2 != null && this.credentials != null) {
                         var nextSeq = this.audioOut.lastSeq + 10;
                         var rtpSyncTime = nextSeq * 352 + 2 * 44100;
-                        request = request.Concat(this.makeHead("RECORD", "rtsp://" + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.ToString() + "/" + this.announceId, di, true)).ToArray();
+                        request = request.Concat(this.makeHead("RECORD", "rtsp://" + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.MapToIPv4().ToString() + "/" + this.announceId, di, true)).ToArray();
                         u += "CSeq: " + ++this.cseq + "\r\n";
                         u += "User-Agent: AirPlay/409.16" + "\r\n";
                         u += "Client-Instance: " + this.dacpId + "\r\n";
@@ -968,12 +1008,12 @@ namespace APLibrary.AirPlay
                         u += "X-Apple-ProtocolVersion: 1\r\n";
                         u += "Range: npt=0-\r\n";
                         u += this.makeRtpInfo() + "\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     } else {
                         request = request.Concat(this.makeHeadWithURL("RECORD", di)).ToArray();
                         u += "Range: npt=0-\r\n";
                         u += this.makeRtpInfo() + "\r\n";
-                        request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                        request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     }
                     break;
                 case GETVOLUME:
@@ -983,7 +1023,7 @@ namespace APLibrary.AirPlay
                        "Content-Type: text/parameters\r\n" +
                        "Content-Length: " + body1.Length + "\r\n\r\n";
                     u += body1;
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     break;
                 case SETVOLUME:
                     var attenuation =
@@ -999,7 +1039,7 @@ namespace APLibrary.AirPlay
                               "Content-Length: " + body2.Length + "\r\n\r\n";
 
                     u += body2;
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     break;
                 case SETPROGRESS:
                     string hms(int seconds) {
@@ -1013,7 +1053,7 @@ namespace APLibrary.AirPlay
                               "Content-Type: text/parameters\r\n" +
                               "Content-Length: " + body3.Length + "\r\n\r\n";
                     u += body3;
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray();
                     break;
                 case SETDAAP:
                     bool daapenc = true;
@@ -1031,7 +1071,7 @@ namespace APLibrary.AirPlay
                     "Content-Type: application/x-dmap-tagged\r\n" +
                     "Content-Length: " + daapInfo.Length + "\r\n\r\n";
 
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(daapInfo).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(daapInfo).ToArray();
                     break;
                 case SETART:
                     request = request.Concat(this.makeHeadWithURL("SET_PARAMETER", di)).ToArray();
@@ -1039,7 +1079,7 @@ namespace APLibrary.AirPlay
                     u +=
                         "Content-Type: " + this.artworkContentType + "\r\n" +
                         "Content-Length: " + this.artwork.Length + "\r\n\r\n";
-                    request = request.Concat(Encoding.Unicode.GetBytes(u)).ToArray().Concat(this.artwork).ToArray();
+                    request = request.Concat(Encoding.UTF8.GetBytes(u)).ToArray().Concat(this.artwork).ToArray();
                     break;
                 case TEARDOWN:
                     request = request.Concat(this.makeHead("TEARDOWN", "", di)).Concat(Encoding.ASCII.GetBytes("\r\n")).ToArray();
@@ -1155,7 +1195,13 @@ namespace APLibrary.AirPlay
             string[] headers = responseText.Split(new string[] { "\r\n\r\n" }, StringSplitOptions.None);
             string[] headerLines = headers[0].Split(new string[] { "\r\n" }, StringSplitOptions.None);
             string[] statusLine = headerLines[0].Split(" ");
-            int status = int.Parse(statusLine[1]);
+            int status = 200;
+            try
+            {
+                int.Parse(statusLine[1]);
+            }
+            catch (Exception _) {
+            }
             string[] headerFields = new string[headerLines.Length - 1];
             Array.Copy(headerLines, 1, headerFields, 0, headerLines.Length - 1);
             Dictionary<string, string> headerDict = new Dictionary<string, string>();
@@ -1174,7 +1220,7 @@ namespace APLibrary.AirPlay
             string bodyText = Encoding.UTF8.GetString(body);
 
             // Detect 453, 401
-
+            Console.WriteLine(status.ToString());
             if (this.status != OPTIONS && this.mode == 0)
             {
                 if (status == 401)
@@ -1245,7 +1291,7 @@ namespace APLibrary.AirPlay
                     }
                 }
             }
-
+            Console.WriteLine(status.ToString());
             // password was accepted (or not needed)
             this.passwordTried = false;
 
@@ -1255,7 +1301,6 @@ namespace APLibrary.AirPlay
                 case PAIR_PIN_START:
                     if (!this.transient) { emitNeedPassword?.Invoke(); }
                     this.status = this.airplay2 ? PAIR_SETUP_1 : PAIR_PIN_SETUP_1;
-                    if (!this.transient) { return; }
                     break;
                 case PAIR_PIN_SETUP_1:
                     var N = "AC6BDB41324A9A9BF166DE5E1389582FAF72B6651987EE07FC319294" +
@@ -1386,6 +1431,7 @@ namespace APLibrary.AirPlay
                           Encoding.ASCII.GetBytes("Control-Write-Encryption-Key"),
                           32
                         );
+                        Console.WriteLine("hmm " + this.credentials.writeKey.Length);
                         this.credentials.readKey = Encryption.HKDF(
                           Encoding.ASCII.GetBytes("Control-Salt"),
                           Convert.FromHexString(this.M1Session.Key),

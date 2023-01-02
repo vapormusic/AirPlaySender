@@ -56,10 +56,11 @@ namespace APLibrary.AirPlay
               //   new CoreAudioDevice(this.hasAirTunes, this.audioOut, options) :
               new AirTunesDevice(host, this.audioOut, options, options?.mode ?? 0, (options?.txt) ?? new string[0]);
 
-            var previousDev = this.devices[dev.key];
+            
 
-            if (previousDev != null)
+            if (this.devices.ContainsKey(dev.key))
             {
+                var previousDev = this.devices[dev.key];
                 // if device is already in the pool, just report its existing status.
                 previousDev.reportStatus();
 
@@ -67,10 +68,10 @@ namespace APLibrary.AirPlay
             }
             
             this.devices[dev.key] = dev;
-            dev.emitDeviceStatus += x;
 
-            void x(string status) {
-                if (status == "error" || status == "stopped" )
+            void x(string status)
+            {
+                if (status == "error" || status == "stopped")
                 {
                     this.devices.Remove(dev.key);
                     checkAirTunesDevices();
@@ -81,6 +82,10 @@ namespace APLibrary.AirPlay
                     emitDevicesNeedSync.Invoke();
                 }
             };
+            
+            dev.emitDeviceStatus += x;
+
+
 
             dev.Start();
             checkAirTunesDevices();

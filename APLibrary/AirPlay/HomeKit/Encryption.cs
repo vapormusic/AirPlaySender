@@ -41,20 +41,21 @@ namespace APLibrary.AirPlay.HomeKit
             // now we compute the PRK            
             var hmac = new HMACSHA512(salt);
             byte[] prk = hmac.ComputeHash(ikm);
-            var prev = new byte[0];
+            byte[] prev = new byte[0];
             byte[] output;
             byte[] buffers = new byte[0];
-            var num_blocks = Math.Ceiling((double)(size / hashLength));
+            int num_blocks = (int) Math.Max(Math.Ceiling((decimal) (size / hashLength)),1);
+            Console.WriteLine("NB: "+ num_blocks.ToString());
             for (var i = 0; i < num_blocks; i++)
             {
                 var hmac1 = new HMACSHA512(prk);
                 var u = ((char)(i + 1));
-                byte[] input = (prev.Concat(info).ToArray()).Concat(new UnicodeEncoding().GetBytes(u.ToString())).ToArray();
+                byte[] input = (prev.Concat(info).ToArray()).Concat(new byte[]{(byte)u}).ToArray();
                 prev = hmac1.ComputeHash(input);
                 buffers = buffers.Concat(prev).ToArray();
             }
             output = buffers.Skip(0).Take(size).ToArray();
-            return output.Skip(0).Take(size).ToArray();
+            return output;
         }
     }
 }

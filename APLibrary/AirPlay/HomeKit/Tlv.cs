@@ -43,7 +43,7 @@ namespace APLibrary.AirPlay.HomeKit
                 var encodedTLVBuffertmp = new byte[0];
                 if (kvp.Value.Length <= 255)
                 {
-                    encodedTLVBuffertmp = (new byte[] { kvp.Key }).Concat(EndianBitConverter.LittleEndian.GetBytes(kvp.Value.Length).Concat(kvp.Value).ToArray()).ToArray();
+                    encodedTLVBuffertmp = (new byte[] { kvp.Key }).Concat(new byte[] { (byte)kvp.Value.Length }).Concat(kvp.Value).ToArray();
                 }
                 else
                 {
@@ -54,11 +54,11 @@ namespace APLibrary.AirPlay.HomeKit
                     {
                         if (leftLength >= 255)
                         {
-                            tempBuffer = tempBuffer.Concat((new byte[] { kvp.Key }).Concat(EndianBitConverter.LittleEndian.GetBytes(0xFF).Concat(kvp.Value.Skip(currentStart).Take(255).ToArray()).ToArray()).ToArray()).ToArray();
+                            tempBuffer = tempBuffer.Concat((new byte[] { kvp.Key }).Concat(new byte[] { 0xFF }).Concat(kvp.Value.Skip(currentStart).Take(255).ToArray()).ToArray()).ToArray();
                             leftLength -= 255;
                             currentStart = currentStart + 255;
                         } else {
-                            tempBuffer = tempBuffer = tempBuffer.Concat((new byte[] { kvp.Key }).Concat(EndianBitConverter.LittleEndian.GetBytes(leftLength).Concat(kvp.Value.Skip(currentStart).Take(leftLength).ToArray()).ToArray()).ToArray()).ToArray();
+                            tempBuffer = tempBuffer = tempBuffer.Concat((new byte[] { kvp.Key }).Concat(new byte[] { (byte) leftLength }).Concat(kvp.Value.Skip(currentStart).Take(leftLength).ToArray()).ToArray()).ToArray();
                             leftLength -= leftLength;
                         }
                     }

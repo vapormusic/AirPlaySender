@@ -31,9 +31,11 @@ namespace APLibrary.AirPlay
         private string[] statusflags;
         private bool alacEncoding;
         private string[] txt;
+        private string[] features;
         private bool needPassword;
         private bool requireEncryption;
         private bool needPin;
+        private bool transient;
         private Socket audioSocket;
         private EndPoint audioSocketEndPoint;
         public string status;
@@ -102,9 +104,36 @@ namespace APLibrary.AirPlay
                 this.needPin = (PinRequired || OneTimePairingRequired);
                 Console.WriteLine("needPss", this.needPassword);
             }
-            Console.WriteLine("needPin", this.needPin);
-            Console.WriteLine("mode-atv", this.mode);
-            Console.WriteLine("alacEncoding", this.alacEncoding);
+
+            this.transient = false;
+            var ft = txt.Where(x => x.StartsWith("features=") || x.StartsWith("ft=")).FirstOrDefault();
+            // Get statusflag , convert hexstring (e.g. 0x3343) to binary and split into array
+            if (ft != null)
+            {
+                var hex = ft.Substring(ft.IndexOf('=') + 1);
+                // check if hex and has "," then split into 2 array
+                var hex_p1 = "";
+                var hex_p2 = "";
+
+                hex_p1 = hex.Split(",")[0];
+                hex_p2 = hex.Contains(',') ? hex.Split(',')[1] : "";
+
+                var binary1 = Convert.ToString(Convert.ToInt32(hex_p1, 16), 2);
+                var binary_set1 = binary1.ToCharArray().Select(x => x.ToString()).ToArray();
+                var binary2 = Convert.ToString(Convert.ToInt32(hex_p2, 16), 2);
+                var binary_set2 = binary2.ToCharArray().Select(x => x.ToString()).ToArray();
+                
+                this.features = binary_set1.Concat(binary_set2).ToArray();
+
+                this.transient = (this.features[this.features.Length - 1 - 48] == "1");
+            }
+         
+  
+            Console.WriteLine("needPin: " + this.needPin.ToString());
+            Console.WriteLine("mode-atv: " + this.mode.ToString());
+            Console.WriteLine("alacEncoding: " + this.alacEncoding.ToString());
+            Console.WriteLine("AP2: " + options.airplay2.ToString());
+            Console.WriteLine("transient: " + this.transient.ToString());
 
             var APOptions = new AirTunesOptions();
             APOptions.alacEncoding = this.alacEncoding;
@@ -112,6 +141,8 @@ namespace APLibrary.AirPlay
             APOptions.needPassword = this.needPassword;
             APOptions.needPin = this.needPin;
             APOptions.debug = options.debug;
+            APOptions.airplay2 = options.airplay2;
+            APOptions.transient = this.transient;
             APOptions.txt = this.txt;
 
 
