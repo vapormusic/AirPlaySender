@@ -4,7 +4,7 @@ Work in progress
 
 © 2023-to-date vapormusic.
 
-For Commercial Usage: Please contact vapormusic.service@gmail.com for contact. No commercial usage is allowed without explicit approval.
+For Commercial Usage: Please contact vapormusic.service@gmail.com for contact. No commercial usage is allowed without **explicit and written** approval.
 
 Otherwise:
 
