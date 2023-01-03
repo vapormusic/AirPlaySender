@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -16,6 +16,7 @@
     <PackageReference Include="plist-cil" Version="2.2.0" />
     <PackageReference Include="Rebex.Elliptic.Curve25519" Version="1.2.1" />
     <PackageReference Include="Rebex.Elliptic.Ed25519" Version="1.2.1" />
+    <PackageReference Include="SimpleUdp" Version="1.2.1" />
     <PackageReference Include="srp" Version="1.0.7" />
   </ItemGroup>
 

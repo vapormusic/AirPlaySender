@@ -16,7 +16,7 @@ namespace APTest
     "da=true",
     "et=0,3,5",
     "ft=0x4A7FCA00,0xBC354BD0",
-    "sf=0x98484",
+    "sf=0x80404",
     "md=0,1,2",
     "am=AudioAccessory5,1",
     "pk=lolno",
