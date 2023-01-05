@@ -82,7 +82,7 @@ namespace APLibrary.AirPlay.HomeKit
             }
             return result;
         }
-        public byte[] EncryptAudio(byte[] message, byte[] aad, int nonce) {
+        public byte[] EncryptAudio(byte[] message, byte[] aad, long nonce) {
             (byte[] ct, byte[] tag) = Encryption.EncryptAndSeal(message, aad, EndianBitConverter.LittleEndian.GetBytes(Convert.ToUInt64(nonce)), this.writeKey);
             return (ct.Concat(tag).ToArray()).Concat(EndianBitConverter.LittleEndian.GetBytes(Convert.ToUInt64(nonce))).ToArray();
         }

@@ -31,14 +31,14 @@ namespace APLibrary.AirPlay
             
         }
 
-        private void NeedSyncHandler(int seq) {
+        private void NeedSyncHandler(long seq) {
             foreach(KeyValuePair<string, AirTunesDevice> kvp in this.devices)
             {
                 if (!this.devices.ContainsKey(kvp.Key))
                   continue;
 
                 if (kvp.Value.onSyncNeeded != null && kvp.Value.controlPort != null)
-                    kvp.Value.onSyncNeeded((int)seq);
+                    kvp.Value.onSyncNeeded(seq);
              }
         }
 

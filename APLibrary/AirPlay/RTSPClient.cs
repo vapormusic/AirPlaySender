@@ -47,9 +47,9 @@ namespace APLibrary.AirPlay
         private string? session;
         private CancellationTokenSource? timeout;
         private int? volume;
-        private int? progress;
-        private int? duration;
-        private int? starttime;
+        private long? progress;
+        private long? duration;
+        private long? starttime;
         private string password;
         private bool passwordTried;
         private bool requireEncryption;
@@ -272,14 +272,14 @@ namespace APLibrary.AirPlay
             this.socket.ReceiveTimeout = 400000000;
             this.socket.SendTimeout = 400000000;
             this.socket.ConnectAsync(host, int.Parse(port)).ContinueWith(task => {
-                Console.WriteLine("OKAY" + host + port);
+                Debug.WriteLine("OKAY" + host + port);
                 nsctrl = this.socket.GetStream();
                 srctrl = new StreamReader(nsctrl);
                 // this.clearTimeout();
 
                 if (this.needPassword == true)
                 {
-                    Console.WriteLine("s1");
+                    Debug.WriteLine("s1");
                     this.status = PAIR_PIN_START;
                     this.sendNextRequest();
                     this.startHeartBeat();
@@ -288,17 +288,17 @@ namespace APLibrary.AirPlay
                 {
                     if (this.mode != 2)
                     {
-                        Console.WriteLine("s2");
-                        if (this.debug) Console.WriteLine("AUTH_SETUP", "nah");
+                        Debug.WriteLine("s2");
+                        if (this.debug) Debug.WriteLine("AUTH_SETUP", "nah");
                         this.status = OPTIONS;
                         this.sendNextRequest();
                         this.startHeartBeat();
                     }
                     else
                     {
-                        Console.WriteLine("s3");
+                        Debug.WriteLine("s3");
                         this.status = AUTH_SETUP;
-                        if (this.debug) Console.WriteLine("AUTH_SETUP", "yah");
+                        if (this.debug) Debug.WriteLine("AUTH_SETUP", "yah");
                         this.sendNextRequest();
                         this.startHeartBeat();
                     }
@@ -310,9 +310,9 @@ namespace APLibrary.AirPlay
         }
 
         public void ExecRequest(byte[] input, bool GetResponse) {
-            Console.WriteLine("GetResponse: " + GetResponse.ToString());
-            Console.WriteLine("Current status:" + rtsp_methods[this.status+1]);
-            Console.WriteLine(Encoding.UTF8.GetString(input));
+            Debug.WriteLine("GetResponse: " + GetResponse.ToString());
+            Debug.WriteLine("Current status:" + rtsp_methods[this.status+1]);
+            Debug.WriteLine(Encoding.UTF8.GetString(input));
             if (this.encryptedChannel && this.credentials != null)
             {
                 input = this.credentials.encrypt(input);
@@ -338,8 +338,12 @@ namespace APLibrary.AirPlay
                 {
                     res = this.credentials.decrypt(res);
                 }
-                Console.WriteLine("Received:");
-                Console.WriteLine(Encoding.UTF8.GetString(res));
+                if (Encoding.UTF8.GetString(res) == "")
+                {
+                    this.cleanup("done");
+                }
+                Debug.WriteLine("Received:");
+                Debug.WriteLine(Encoding.UTF8.GetString(res));
                 processData(res);
             }
 
@@ -626,7 +630,7 @@ namespace APLibrary.AirPlay
                     this.credentials = null;
                     this.verifier_hap_1 = null;
                     this.encryptionKey = null;
-                    Console.WriteLine("HMM");
+                    Debug.WriteLine("HMM");
                     if (this.needPin || this.airplay2)
                     {
                         request = request.Concat(this.makeHead("POST", "/pair-pin-start", null, true)).ToArray();
@@ -720,7 +724,7 @@ namespace APLibrary.AirPlay
                     if (this.transient == true)
                     {
                         Dictionary<byte, byte[]> dic1 = new Dictionary<byte, byte[]>();
-                        Console.WriteLine(new byte[] { 0x00000010 }.Length);
+                        Debug.WriteLine(new byte[] { 0x00000010 }.Length);
                         dic1.Add(TlvTag.Sequence, new byte[] { 0x01 });
                         dic1.Add(TlvTag.PairingMethod, new byte[] { 0x00 });
                         dic1.Add(TlvTag.Flags, new byte[] { 0x00000010 });
@@ -1001,6 +1005,10 @@ namespace APLibrary.AirPlay
                     break;
                 case RECORD:
                     if (this.airplay2 != null && this.credentials != null) {
+                        if (this.announceId == null)
+                        {
+                            this.announceId = Utils.Utils.randomInt(10).ToString();
+                        }
                         var nextSeq = this.audioOut.lastSeq + 10;
                         var rtpSyncTime = nextSeq * 352 + 2 * 44100;
                         request = request.Concat(this.makeHead("RECORD", "rtsp://" + ((IPEndPoint)this.socket?.Client.LocalEndPoint).Address.MapToIPv4().ToString() + "/" + this.announceId, di, true)).ToArray();
@@ -1037,7 +1045,7 @@ namespace APLibrary.AirPlay
 
                     string body2 = "volume: " + attenuation.ToString() + "\r\n";
 
-                    request = request.Concat(this.makeHeadWithURL("GET_PARAMETER", di)).ToArray();
+                    request = request.Concat(this.makeHeadWithURL("SET_PARAMETER", di)).ToArray();
                     u +=
                               "Content-Type: text/parameters\r\n" +
                               "Content-Length: " + body2.Length + "\r\n\r\n";
@@ -1224,14 +1232,14 @@ namespace APLibrary.AirPlay
             string bodyText = Encoding.UTF8.GetString(body);
 
             // Detect 453, 401
-            Console.WriteLine(status.ToString());
+            Debug.WriteLine(status.ToString());
             if (this.status != OPTIONS && this.mode == 0)
             {
                 if (status == 401)
                 {
                     if (this.password == null)
                     {
-                        if (this.debug) Console.WriteLine("nopass");
+                        if (this.debug) Debug.WriteLine("nopass");
                         if (this.status == OPTIONS2)
                         {
                             emitEnd?.Invoke("pair_failed", "");
@@ -1249,7 +1257,7 @@ namespace APLibrary.AirPlay
 
                     if (this.passwordTried)
                     {
-                        if (this.debug) Console.WriteLine("badpass");
+                        if (this.debug) Debug.WriteLine("badpass");
                         emitEnd?.Invoke("pair_failed", "");
                         this.cleanup("bad_password");
 
@@ -1271,7 +1279,7 @@ namespace APLibrary.AirPlay
 
                 if (status == 453)
                 {
-                    if (this.debug) Console.WriteLine("busy");
+                    if (this.debug) Debug.WriteLine("busy");
                     this.cleanup("busy");
                     return;
                 }
@@ -1295,7 +1303,7 @@ namespace APLibrary.AirPlay
                     }
                 }
             }
-            Console.WriteLine(status.ToString());
+            Debug.WriteLine(status.ToString());
             // password was accepted (or not needed)
             this.passwordTried = false;
 
@@ -1321,7 +1329,7 @@ namespace APLibrary.AirPlay
                     this.srp = new SrpClient();
                     this.P = this.password;
                     var pps1_bplist = BinaryPropertyListParser.Parse(body) as NSDictionary;
-                    Console.WriteLine(BinaryPropertyListParser.Parse(body).ToXmlPropertyList());
+                    Debug.WriteLine(BinaryPropertyListParser.Parse(body).ToXmlPropertyList());
                     this.s = Convert.ToHexString((pps1_bplist.Get("salt") as NSData).Bytes);
                     this.B = Convert.ToHexString((pps1_bplist.Get("pk") as NSData).Bytes);
                     NSDictionary dict = new NSDictionary();
@@ -1363,13 +1371,13 @@ namespace APLibrary.AirPlay
                         byte[] backOff = databuf1[TlvTag.BackOff];
                         int seconds = EndianBitConverter.LittleEndian.ToInt16(backOff, 0);
 
-                        Console.WriteLine("You've attempt to pair too recently. Try again in " + (seconds.ToString()) + " seconds.");
+                        Debug.WriteLine("You've attempt to pair too recently. Try again in " + (seconds.ToString()) + " seconds.");
 
                     }
                     if (databuf1.ContainsKey(TlvTag.ErrorCode))
                     {
                         byte[] buffer = databuf1[TlvTag.ErrorCode];
-                        Console.WriteLine("Device responded with error code " + Convert.ToSByte(buffer).ToString() + ". Try rebooting your Apple TV.");
+                        Debug.WriteLine("Device responded with error code " + Convert.ToSByte(buffer).ToString() + ". Try rebooting your Apple TV.");
                     }
                     if (databuf1.ContainsKey(TlvTag.PublicKey))
                     {
@@ -1435,7 +1443,7 @@ namespace APLibrary.AirPlay
                           Encoding.ASCII.GetBytes("Control-Write-Encryption-Key"),
                           32
                         );
-                        Console.WriteLine("hmm " + this.credentials.writeKey.Length);
+                        Debug.WriteLine("hmm " + this.credentials.writeKey.Length);
                         this.credentials.readKey = Encryption.HKDF(
                           Encoding.ASCII.GetBytes("Control-Salt"),
                           Convert.FromHexString(this.M1Session.Key),
@@ -1514,20 +1522,20 @@ namespace APLibrary.AirPlay
                     this.status = (this.mode == 2 ? AUTH_SETUP : SETUP_AP2_1);
                     break;
                 case SETUP_AP2_1:
-                    Console.WriteLine("timing port parsing");
+                    Debug.WriteLine("timing port parsing");
                     NSDictionary sa1_bplist = BinaryPropertyListParser.Parse(body) as NSDictionary;
-                    Console.WriteLine(sa1_bplist.ToXmlPropertyList());
+                    Debug.WriteLine(sa1_bplist.ToXmlPropertyList());
                     this.eventPort = ((NSNumber)sa1_bplist.ObjectForKey("eventPort")).ToInt();
                     if (sa1_bplist.TryGetValue("timingPort", out NSObject timingPort)) {
                         this.timingDestPort = ((NSNumber)sa1_bplist.ObjectForKey("timingPort")).ToInt();
                     }
-                    Console.WriteLine("timing port parsing ", this.eventPort.ToString());
+                    Debug.WriteLine("timing port parsing ", this.eventPort.ToString());
                     this.status = SETPEERS;
                     
                     break;
                 case SETUP_AP2_2:
                     NSDictionary sa2_bplist = BinaryPropertyListParser.Parse(body) as NSDictionary;
-                    Console.WriteLine(sa2_bplist.ToXmlPropertyList());
+                    Debug.WriteLine(sa2_bplist.ToXmlPropertyList());
                     NSDictionary stream = ((NSArray)sa2_bplist.ObjectForKey("streams")).First() as NSDictionary;
                     RTSPConfig rtspConfig = new RTSPConfig();
                     rtspConfig.audioLatency = 50;

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace APLibrary.AirPlay.HomeKit
 {
@@ -45,7 +46,7 @@ namespace APLibrary.AirPlay.HomeKit
             byte[] output;
             byte[] buffers = new byte[0];
             int num_blocks = (int) Math.Max(Math.Ceiling((decimal) (size / hashLength)),1);
-            Console.WriteLine("NB: "+ num_blocks.ToString());
+            Debug.WriteLine("NB: "+ num_blocks.ToString());
             for (var i = 0; i < num_blocks; i++)
             {
                 var hmac1 = new HMACSHA512(prk);

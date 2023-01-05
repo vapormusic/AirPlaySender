@@ -12,13 +12,13 @@ namespace APLibrary.AirPlay
         public long timeRef;
         public NTP()
         {
-            timeRef = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) - (2208988800000);
+            timeRef = DateTimeOffset.Now.ToUnixTimeMilliseconds() - (2208988800000);
         }
         
         public byte[] getNTPTimestamp()
         {
-            long time = (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond) - timeRef;
-            int sec = (int) Math.Floor((double) (time / 1000));
+            long time = DateTimeOffset.Now.ToUnixTimeMilliseconds() - timeRef;
+            long sec = (long)Math.Floor((double)time / 1000.0);
             var msec = time - sec * 1000;
             var ntp_msec = Math.Floor(msec * 4294967.296);
             byte[] data = new byte[8];

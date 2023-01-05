@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -8,7 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\APLibrary\APLibrary.csproj" />
+    <PackageReference Include="EndianBitConverter.net6" Version="1.1.1" />
   </ItemGroup>
 
 </Project>

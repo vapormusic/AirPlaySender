@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace APLibrary.AirPlay
 {
@@ -15,12 +16,12 @@ namespace APLibrary.AirPlay
         DRAINING = 3,
         ENDING = 4,
         ENDED = 5;
-        private int maxSize;
+        private long maxSize;
         private int packetSize;
         private bool writable;
         private bool muted = false;
         private List<byte[]> buffers;
-        private int currentSize;
+        private long currentSize;
         private int status;
         private PacketPool packetPool;
         public BufferStatusEvent? emitBufferStatus;
@@ -50,6 +51,7 @@ namespace APLibrary.AirPlay
             if (this.status == WAITING)
             {
                 emitBufferStatus?.Invoke("buffering");
+                Debug.WriteLine("BufferBuffering");
                 // this.emit('status','buffering')
                 this.status = FILLING;
             }
@@ -57,6 +59,7 @@ namespace APLibrary.AirPlay
             if (this.status == FILLING && this.currentSize > this.maxSize / 2)
             {
                 emitBufferStatus?.Invoke("playing");
+                Debug.WriteLine("BufferPlaying");
                 // this.emit('status','playing')
                 this.status = NORMAL;
             }
@@ -77,9 +80,10 @@ namespace APLibrary.AirPlay
         {
             Packet packet = this.packetPool.GetPacket();
             // play silence until buffer is filled enough
-            if (this.status != ENDING && this.status != ENDED && (this.status == FILLING || this.currentSize < this.packetSize))
+            if (this.status != ENDING && this.status != ENDED 
+                && (this.status == FILLING || this.currentSize < this.packetSize))
             {
-                Array.Clear(packet.data, 0, packet.data.Length);
+                packet.data = new byte[packet.data.Length];
 
                 if (this.status != FILLING && this.status != WAITING)
                 {
@@ -90,14 +94,14 @@ namespace APLibrary.AirPlay
             }
             else
             {
-                int offset = 0;
-                int remaining = this.packetSize;
+                long offset = 0;
+                long remaining = this.packetSize;
                 while (remaining > 0)
                 {
                     // pad packet with silence if buffer is empty
                     if (this.buffers.Count == 0)
                     {
-                        Array.Clear(packet.data, offset, packet.data.Length - offset);
+                        Array.Clear(packet.data, 0, packet.data.Length);
                         remaining = 0;
                         break;
                     }
@@ -115,10 +119,10 @@ namespace APLibrary.AirPlay
                     else
                     {
                         // first buffer contains enough data to fill a packet: slice it
-                        Array.Copy(first, 0, packet.data, offset, remaining - first.Length);
-                        this.buffers[0] = first.Skip(remaining).ToArray();
+                        Array.Copy(first, 0, packet.data, offset, remaining);
+                        this.buffers[0] = first.Skip(unchecked((int)remaining)).ToArray();
+                        offset += offset + remaining;
                         remaining = 0;
-                        offset += remaining;
                     }
                 }
                 
@@ -143,7 +147,7 @@ namespace APLibrary.AirPlay
             
             if (this.muted)
             {
-                Array.Clear(packet.data, 0, packet.data.Length);
+                packet.data = new byte[packet.data.Length];
             }
 
             

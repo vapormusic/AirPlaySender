@@ -9,15 +9,15 @@ namespace APLibrary.AirPlay
     public class Packet
     {
         public byte[] data;
-        public int refr;
-        public int seq;
+        public long refr;
+        public long? seq;
         public long timestamp;
         private PacketPool pool;
         public Packet(PacketPool pool)
         {
             this.data = new byte[1408];
             this.refr = 1;
-            this.seq = -1;
+            this.seq = null;
             this.pool = pool;
         }
 
@@ -30,7 +30,7 @@ namespace APLibrary.AirPlay
             this.refr--;
             if (this.refr == 0)
             {
-                this.seq = -1;
+                this.seq = null;
                 this.pool.ReleasePacket(this);
             }
         }
@@ -64,7 +64,7 @@ namespace APLibrary.AirPlay
 
         public void ReleasePacket(Packet p)
         {
-            pool.Append(p);
+            pool.Add(p);
         }
 
     }

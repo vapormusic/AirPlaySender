@@ -1,6 +1,7 @@
 ﻿using APLibrary;
 using APLibrary.AirPlay.Types;
 using static System.Net.Mime.MediaTypeNames;
+using System.Diagnostics;
 
 namespace APTest
 {
@@ -31,23 +32,23 @@ namespace APTest
                 argsoptions.port = 7000;
                 argsoptions.txt = argvtxt;
                 argsoptions.volume = 40;
-                argsoptions.airplay2 = true;
+                //argsoptions.airplay2 = true;
                 var device = airtunes.add(host, argsoptions);
 
                 void Device_emitDeviceStatus(string status)
                 {
-                    Console.WriteLine("status", status);
+                    Debug.WriteLine("dev status", status);
                     if (status == "ready")
                     {
                         // bytes from F:\node_airtunes2_cider\examples\sample.pcm
-                        var bytes = System.IO.File.ReadAllBytes("F:\\node_airtunes2_cider\\examples\\sample.pcm");
+                        var bytes = System.IO.File.ReadAllBytes("F:\\node_airtunes2_cider\\examples\\mirrors.raw");
                         airtunes.circularBuffer.Write(bytes);
                     }
                 }
 
                 device.emitDeviceStatus += Device_emitDeviceStatus;
                 Console.ReadLine();
-                Console.WriteLine("sada");
+                Debug.WriteLine("sada");
             }
 
 

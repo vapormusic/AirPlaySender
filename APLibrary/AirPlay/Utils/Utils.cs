@@ -8,9 +8,13 @@ namespace APLibrary.AirPlay.Utils
 {
     public class Utils
     {
-        public static int randomInt(int n)
+        public static long randomInt(int n)
         {
-            return (int) Math.Floor(new Random().Next(0,1) * Math.Pow(10, n));
+            var random = new Random();
+            string s = string.Empty;
+            for (int i = 0; i < n; i++)
+                s = String.Concat(s, random.Next(10).ToString());
+            return long.Parse(s);
         }
 
         public static string randomHex(int digits)

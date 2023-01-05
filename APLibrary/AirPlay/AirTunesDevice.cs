@@ -37,7 +37,7 @@ namespace APLibrary.AirPlay
         private bool needPin;
         private bool transient;
         private Socket audioSocket;
-        private EndPoint audioSocketEndPoint;
+        private IPEndPoint audioSocketEndPoint;
         public string status;
         private bool audioCallbackRunning;
         public event DeviceStatusEvent emitDeviceStatus;
@@ -54,7 +54,7 @@ namespace APLibrary.AirPlay
 
             this.udpServers = new UDPServers();
             this.audioOut = audioOut;
-            // this.audioOut.emitNeedSync += 
+
 
             this.host = host;
             this.port = options.port ?? 5000;
@@ -67,7 +67,7 @@ namespace APLibrary.AirPlay
             this.statusflags = new string[] { };
             this.alacEncoding = options?.alacEncoding ?? true;
             this.txt = txt;
-            audioSocketEndPoint = new IPEndPoint(IPAddress.Parse(host), port);
+
 
             //get txt starts with et= and check whether it contains 4
             //if yes, then set mode to 2
@@ -98,10 +98,10 @@ namespace APLibrary.AirPlay
                 bool PasswordRequired = (this.statusflags[this.statusflags.Length - 1 - 7] == "1");
                 bool PinRequired = (this.statusflags[this.statusflags.Length - 1 - 3] == "1");
                 bool OneTimePairingRequired = (this.statusflags[this.statusflags.Length - 1 - 9] == "1");
-                Console.WriteLine("needPss", PasswordRequired, PinRequired, OneTimePairingRequired);
+                Debug.WriteLine("needPss", PasswordRequired, PinRequired, OneTimePairingRequired);
                 this.needPassword = (PasswordRequired || PinRequired || OneTimePairingRequired);
                 this.needPin = (PinRequired || OneTimePairingRequired);
-                Console.WriteLine("needPss", this.needPassword);
+                Debug.WriteLine("needPss", this.needPassword);
             }
 
             this.transient = false;
@@ -128,11 +128,11 @@ namespace APLibrary.AirPlay
             }
          
   
-            Console.WriteLine("needPin: " + this.needPin.ToString());
-            Console.WriteLine("mode-atv: " + this.mode.ToString());
-            Console.WriteLine("alacEncoding: " + this.alacEncoding.ToString());
-            Console.WriteLine("AP2: " + options.airplay2.ToString());
-            Console.WriteLine("transient: " + this.transient.ToString());
+            Debug.WriteLine("needPin: " + this.needPin.ToString());
+            Debug.WriteLine("mode-atv: " + this.mode.ToString());
+            Debug.WriteLine("alacEncoding: " + this.alacEncoding.ToString());
+            Debug.WriteLine("AP2: " + options.airplay2.ToString());
+            Debug.WriteLine("transient: " + this.transient.ToString());
 
             var APOptions = new AirTunesOptions();
             APOptions.alacEncoding = this.alacEncoding;
@@ -163,6 +163,7 @@ namespace APLibrary.AirPlay
         private void audioCallback(Packet packet)
         {
             var airTunes = makeAirTunesPacket(packet, requireEncryption, alacEncoding);
+            if (audioSocket != null)
             audioSocket.SendTo(airTunes, audioSocketEndPoint);
         }
 
@@ -174,10 +175,12 @@ namespace APLibrary.AirPlay
             this.serverPort = setup.server_port;
             this.controlPort = setup.control_port;
             this.timingPort = setup.timing_port;
+            this.audioSocketEndPoint = new IPEndPoint(IPAddress.Parse(host), (int) serverPort);
         }
 
-        void emitReady()
+        private void emitReady()
         {
+            Debug.WriteLine("JUJ");
             this.relayAudio();
         }
 
@@ -212,11 +215,13 @@ namespace APLibrary.AirPlay
         public void relayAudio()
         {
             updateStatus("ready");
+            Debug.WriteLine("START UDP AUDIO");
             this.audioOut.emitPacket += audioCallback;
             this.audioCallbackRunning = true;
         }
 
-        public void onSyncNeeded(int seq) {
+        public void onSyncNeeded(long seq) {
+            Debug.WriteLine("need sync");
             udpServers.SendControlSync(this, seq);
         }
 
@@ -302,7 +307,7 @@ namespace APLibrary.AirPlay
             }
             if (credentials != null)
             {
-                byte[] pcm = credentials.EncryptAudio(alac, header.Skip(4).Take(8).ToArray(), packet.seq);
+                byte[] pcm = credentials.EncryptAudio(alac, header.Skip(4).Take(8).ToArray(), (long)packet.seq);
                 byte[] airplay = new byte[alac.Length + RTP_HEADER_SIZE];
                 Array.Copy(header, 0, airplay, 0, header.Length);
                 Array.Copy(pcm, 0, airplay, RTP_HEADER_SIZE, pcm.Length);
@@ -389,23 +394,21 @@ namespace APLibrary.AirPlay
 
         private byte[] pcmParse(byte[] pcmData)
         {
-            byte[] dst = new byte[352 * 4];
+            byte[] dst = new byte[pcmData.Length];
             byte[] src = pcmData;
 
             int a = 0;
             int b = 0;
-            int size;
-            for (size = 0; size < 352; size++)
+            for (int size = 0; size < 352; size++)
             {
                 dst[a++] = src[b + 1];
                 dst[a++] = src[b++];
                 b++;
-
+                
                 dst[a++] = src[b + 1];
                 dst[a++] = src[b++];
                 b++;
             }
-            size *= 4;
             return dst;
         }
 

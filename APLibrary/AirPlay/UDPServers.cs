@@ -12,6 +12,7 @@ using BitConverter;
 using NetCoreServer;
 using SecureRemotePassword;
 using NetCoreServer;
+using System.Diagnostics;
 
 
 namespace AirPlayClient
@@ -32,7 +33,6 @@ namespace AirPlayClient
 
         protected override void OnReceived(EndPoint endpoint, byte[] buffer, long offset, long size)
         {
-            Console.WriteLine("Incoming: " + Encoding.UTF8.GetString(buffer, (int)offset, (int)size));
             // read the data
 
             uint ts1 = EndianBitConverter.BigEndian.ToUInt32(buffer, 24);
@@ -60,7 +60,7 @@ namespace AirPlayClient
 
         protected override void OnError(SocketError error)
         {
-            Console.WriteLine($"Echo UDP server caught an error with code {error}");
+            Debug.WriteLine($"Echo UDP server caught an error with code {error}");
         }
     }
     
@@ -97,7 +97,7 @@ namespace AirPlayClient
         
         private void recv(IAsyncResult res)
         {
-            //Console.WriteLine("SSDK SDSC 2");
+            //Debug.WriteLine("SSDK SDSC 2");
             //byte[] dataBuffer = timingSocket._socket.EndReceive(res);
             
             //// read the data
@@ -125,7 +125,7 @@ namespace AirPlayClient
                 
                 //byte[] dataBuffer = new byte[1024];
                 //int v = controlSocket.ReceiveFrom(dataBuffer, ref anyIP);
-                //Console.WriteLine("HMM2");
+                //Debug.WriteLine("HMM2");
 
                 //// read the data
 
@@ -150,7 +150,7 @@ namespace AirPlayClient
         public void ReceiveControlData()
         {
 
-                //Console.WriteLine("HMM");
+                //Debug.WriteLine("HMM");
                 //byte[] dataBuffer = new byte[1024];
                 //// Receive data on the control socket and store it in the data buffer.
                 //int v = controlSocket.ReceiveFrom(dataBuffer, ref anyIP);
@@ -169,7 +169,7 @@ namespace AirPlayClient
                 //}
         }
 
-        public void SendControlSync(AirTunesDevice device, int seq)
+        public void SendControlSync(AirTunesDevice device, long seq)
         {
             byte[] data = new byte[20];
             Array.Copy(EndianBitConverter.BigEndian.GetBytes((ushort)0x80d4), 0, data, 0, 2);

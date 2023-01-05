@@ -4,17 +4,18 @@ using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace APLibrary.AirPlay
 {
     public delegate void PacketEvent(Packet packet);
-    public delegate void NeedSyncEvent(int seq);
+    public delegate void NeedSyncEvent(long seq);
     public class AudioOut
     {
-        public int lastSeq;
+        public long lastSeq;
         private bool hasAirTunes;
-        private int rtp_time_ref;
-        private static int SEQ_NUM_WRAP = (int) Math.Pow(2, 16);
+        private long rtp_time_ref;
+        private static long SEQ_NUM_WRAP = (long) Math.Pow(2, 16);
 
         public event PacketEvent emitPacket;
         public event NeedSyncEvent emitNeedSync;
@@ -27,7 +28,7 @@ namespace APLibrary.AirPlay
         
         public void Init(Devices devices, CircularBuffer circularBuffer)
         {
-            rtp_time_ref = (int) Math.Floor((double) (DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond));
+            rtp_time_ref = (long) (DateTimeOffset.Now.ToUnixTimeMilliseconds());
 
             void listener1(bool hasAirTunes)
             {
@@ -43,14 +44,15 @@ namespace APLibrary.AirPlay
             // A sync is forced when a new remote device is added.
             devices.emitDevicesNeedSync += listener2;
             
-            void SendPacket(int seq)
+            void SendPacket(long seq)
             {
+                
                 var packet = circularBuffer.ReadPacket();
 
                 packet.seq = seq % SEQ_NUM_WRAP;
                 packet.timestamp = (seq * 352 + 2 * 44100) % 4294967296;
 
-                if (hasAirTunes && seq % 126 == 0)
+                if (hasAirTunes && (seq % 126 == 0))
                 {
                     emitNeedSync?.Invoke(seq);
                 }
@@ -61,26 +63,28 @@ namespace APLibrary.AirPlay
 
             void SyncAudio()
             {
+
                 /*
                  * Each time syncAudio() runs, a burst of packet is sent.
                  * Increasing config.stream_latency lowers CPU usage but increases the size of the burst.
                  * If the burst size exceeds the UDP windows size (which we do not know), packets are lost.
                  */
-                var elapsed = (int) Math.Floor((double)(DateTime.Now.Ticks / TimeSpan.TicksPerMillisecond))- rtp_time_ref;
-
+                // Debug.WriteLine("ref: " + rtp_time_ref.ToString());
+                Debug.WriteLine("sj");
+                var elapsed = DateTimeOffset.Now.ToUnixTimeMilliseconds() - rtp_time_ref;
                 /*
                  * currentSeq is the # of the packet we should be sending now. We have some packets to catch-up
                  * since syncAudio is not always running.
                  */
-                int currentSeq = (int) Math.Floor((decimal) elapsed * 44100 / (352 * 1000));
+                long currentSeq = (long)Math.Floor((decimal)(elapsed * 44100) / (352 * 1000));
 
                 for (var i = this.lastSeq + 1; i <= currentSeq; i++)
                     SendPacket(i);
-
-                lastSeq = currentSeq;
+                Debug.WriteLine(currentSeq.ToString());
+                this.lastSeq = currentSeq;
 
                 // reschedule ourselves later
-                SetTimeout(SyncAudio, 30);
+                Task.Delay(30).ContinueWith(t => SyncAudio());
             }
 
             SyncAudio();
