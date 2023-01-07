@@ -106,7 +106,7 @@ namespace APLibrary.AirPlay
                         break;
                     }
 
-                    var first = this.buffers[0];
+                    byte[] first = this.buffers[0];
                     
                     if (first.Length <= remaining)
                     {
@@ -120,7 +120,9 @@ namespace APLibrary.AirPlay
                     {
                         // first buffer contains enough data to fill a packet: slice it
                         Array.Copy(first, 0, packet.data, offset, remaining);
-                        this.buffers[0] = first.Skip(unchecked((int)remaining)).ToArray();
+                        this.buffers[0] = new byte[first.Length - remaining];
+
+                        System.Buffer.BlockCopy(first,(int) remaining, this.buffers[0], 0, this.buffers[0].Length);
                         offset += offset + remaining;
                         remaining = 0;
                     }

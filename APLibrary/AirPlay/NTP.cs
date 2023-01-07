@@ -18,7 +18,7 @@ namespace APLibrary.AirPlay
         public byte[] getNTPTimestamp()
         {
             long time = DateTimeOffset.Now.ToUnixTimeMilliseconds() - timeRef;
-            long sec = (long)Math.Floor((double)time / 1000.0);
+            long sec = (long)(time / 1000.0);
             var msec = time - sec * 1000;
             var ntp_msec = Math.Floor(msec * 4294967.296);
             byte[] data = new byte[8];

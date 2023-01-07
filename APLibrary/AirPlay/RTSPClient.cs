@@ -78,6 +78,7 @@ namespace APLibrary.AirPlay
         private byte[] privateKey;
         private byte[] deviceProof;
         private SrpClient? srp;
+        private TcpClient? eventsocket;
         private string I = "366B4165DD64AD3A";
         private string P;
         private string s;
@@ -183,7 +184,7 @@ namespace APLibrary.AirPlay
             this.cseq = 0;
             this.announceId = null;
             this.activeRemote = Utils.Utils.randomInt(9).ToString().ToUpper();
-            this.dacpId = Utils.Utils.randomHex(8).ToUpper();
+            this.dacpId = "23316E0179E37847";
             this.session = null;
             this.timeout = null;
             this.volume = volume;
@@ -327,25 +328,30 @@ namespace APLibrary.AirPlay
             
             using (MemoryStream ms = new MemoryStream())
             {
-                byte[] buffer = new byte[4096];
+                byte[] buffer = new byte[8192];
                 do
                 {
                     lastRead = nsctrl.Read(buffer, 0, buffer.Length);
                     ms.Write(buffer, 0, lastRead);
                 } while (lastRead > buffer.Length);
                 res = ms.ToArray();
-                if (this.encryptedChannel && this.credentials != null)
-                {
-                    res = this.credentials.decrypt(res);
-                }
+                int[] x = (new int[] { PAIR_SETUP_1, PAIR_SETUP_2, PAIR_SETUP_3, PAIR_VERIFY_HAP_1, PAIR_VERIFY_HAP_2 });
                 if (Encoding.UTF8.GetString(res) == "")
                 {
                     this.cleanup("done");
                 }
+                if (this.encryptedChannel && this.credentials != null)
+                {
+                    res = this.credentials.decrypt(res);
+                }
+
+
                 Debug.WriteLine("Received:");
                 Debug.WriteLine(Encoding.UTF8.GetString(res));
                 processData(res);
             }
+
+
 
 
 
@@ -495,7 +501,7 @@ namespace APLibrary.AirPlay
             //        }
             //        self.setArtwork(data, contentType, callback);
             //    });
-            //}
+            //} 
 
             //if (contentType === null)
             //    return this.cleanup("no_art_content_type");
@@ -724,7 +730,6 @@ namespace APLibrary.AirPlay
                     if (this.transient == true)
                     {
                         Dictionary<byte, byte[]> dic1 = new Dictionary<byte, byte[]>();
-                        Debug.WriteLine(new byte[] { 0x00000010 }.Length);
                         dic1.Add(TlvTag.Sequence, new byte[] { 0x01 });
                         dic1.Add(TlvTag.PairingMethod, new byte[] { 0x00 });
                         dic1.Add(TlvTag.Flags, new byte[] { 0x00000010 });
@@ -739,7 +744,6 @@ namespace APLibrary.AirPlay
                         Dictionary<byte, byte[]> dic2 = new Dictionary<byte, byte[]>();
                         dic2.Add(TlvTag.PairingMethod, new byte[] { 0x00 });
                         dic2.Add(TlvTag.Sequence, new byte[] { 0x01 });
-                        dic2.Add(TlvTag.Flags, new byte[] { 0x00000010 });
                         byte[] ps2x = Tlv.Encode(dic2);
                         u += "Content-Length: " + ps2x.Length + "\r\n";
                         u += "Content-Type: application/octet-stream" + "\r\n\r\n";
@@ -980,7 +984,7 @@ namespace APLibrary.AirPlay
                         NSDictionary streams = new NSDictionary();
                         
                         NSDictionary stream = new NSDictionary();
-                        stream.Add("audioFormat", 262144); // PCM/44100/16/2
+                        stream.Add("audioFormat", 262144); // PCM/44100/16/2 262144
                         stream.Add("audioMode", "default");
                         stream.Add("controlPort", this.controlPort);
                         stream.Add("ct", 2);
@@ -1005,6 +1009,9 @@ namespace APLibrary.AirPlay
                     break;
                 case RECORD:
                     if (this.airplay2 != null && this.credentials != null) {
+                        this.eventsocket = new TcpClient();
+
+                        this.eventsocket.ConnectAsync(this.hostip, (int) this.eventPort);
                         if (this.announceId == null)
                         {
                             this.announceId = Utils.Utils.randomInt(10).ToString();
@@ -1218,10 +1225,12 @@ namespace APLibrary.AirPlay
             Array.Copy(headerLines, 1, headerFields, 0, headerLines.Length - 1);
             Dictionary<string, string> headerDict = new Dictionary<string, string>();
             foreach (string headerField in headerFields)
-            {
-                string[] headerFieldParts = headerField.Split(new string[] { ": " }, StringSplitOptions.None);
-                headerDict.Add(headerFieldParts[0], headerFieldParts[1]);
-            }
+                {
+                    string[] headerFieldParts = headerField.Split(new string[] { ": " }, StringSplitOptions.None);
+                    if (headerFieldParts.Length > 1)
+                    headerDict.Add(headerFieldParts[0], headerFieldParts[1]);
+                }
+
             // Get the body in raw byte  form
             byte[] body = new byte[0];
             if (headers.Length > 1)
@@ -1239,7 +1248,7 @@ namespace APLibrary.AirPlay
                 {
                     if (this.password == null)
                     {
-                        if (this.debug) Debug.WriteLine("nopass");
+                        Debug.WriteLine("nopass");
                         if (this.status == OPTIONS2)
                         {
                             emitEnd?.Invoke("pair_failed", "");
@@ -1257,7 +1266,7 @@ namespace APLibrary.AirPlay
 
                     if (this.passwordTried)
                     {
-                        if (this.debug) Debug.WriteLine("badpass");
+                        Debug.WriteLine("badpass");
                         emitEnd?.Invoke("pair_failed", "");
                         this.cleanup("bad_password");
 
@@ -1279,7 +1288,7 @@ namespace APLibrary.AirPlay
 
                 if (status == 453)
                 {
-                    if (this.debug) Debug.WriteLine("busy");
+                    Debug.WriteLine("busy");
                     this.cleanup("busy");
                     return;
                 }
@@ -1366,7 +1375,9 @@ namespace APLibrary.AirPlay
                     this.status = this.mode == 2 ? AUTH_SETUP : OPTIONS;
                     break;
                 case PAIR_SETUP_1:
+                    Debug.WriteLine("yah");
                     Dictionary<byte, byte[]> databuf1 = Tlv.Decode(body);
+                    Debug.WriteLine(databuf1.ToString());
                     if (databuf1.ContainsKey(TlvTag.BackOff)) {
                         byte[] backOff = databuf1[TlvTag.BackOff];
                         int seconds = EndianBitConverter.LittleEndian.ToInt16(backOff, 0);
@@ -1418,7 +1429,7 @@ namespace APLibrary.AirPlay
                         this.M1 = M1Session.Proof;
                         this.status = PAIR_SETUP_2;
                     } else {
-                        this.emitEnd("pair_failed", "");
+                        this.emitEnd("pair_failed", "no pk");
                         this.cleanup("pair_failed");
                         return;
                     }
@@ -1450,6 +1461,7 @@ namespace APLibrary.AirPlay
                           Encoding.ASCII.GetBytes("Control-Read-Encryption-Key"),
                           32
                         );
+                        Console.WriteLine("write " + Convert.ToHexString(this.credentials.writeKey));
                         this.encryptedChannel = true;
                         this.status = SETUP_AP2_1;
                     }

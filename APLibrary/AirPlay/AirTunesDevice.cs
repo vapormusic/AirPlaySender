@@ -2,6 +2,7 @@
 using APLibrary.AirPlay.HomeKit;
 using APLibrary.AirPlay.Types;
 using BitConverter;
+using NetCoreServer;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -19,6 +20,40 @@ using System.Xml.Linq;
 namespace APLibrary.AirPlay
 {
     public delegate void DeviceStatusEvent(string status);
+
+    class EchoClient : NetCoreServer.UdpClient
+    {
+        public EchoClient(string address, int port) : base(address, port) { }
+
+        public void DisconnectAndStop()
+        {
+            _stop = true;
+            Disconnect();
+            while (IsConnected)
+                Thread.Yield();
+        }
+
+        protected override void OnConnected()
+        {
+            ReceiveAsync();
+        }
+
+        protected override void OnDisconnected()
+        {
+        }
+
+        protected override void OnReceived(EndPoint endpoint, byte[] buffer, long offset, long size)
+        {
+            ReceiveAsync();
+        }
+
+        protected override void OnError(SocketError error)
+        {
+        }
+
+        private bool _stop;
+    }
+    
     public class AirTunesDevice
     {
         private UDPServers udpServers;
@@ -162,7 +197,7 @@ namespace APLibrary.AirPlay
 
         private void audioCallback(Packet packet)
         {
-            var airTunes = makeAirTunesPacket(packet, requireEncryption, alacEncoding);
+            var airTunes = makeAirTunesPacket(packet, requireEncryption, alacEncoding, this.credentials);
             if (audioSocket != null)
             audioSocket.SendTo(airTunes, audioSocketEndPoint);
         }
@@ -175,6 +210,7 @@ namespace APLibrary.AirPlay
             this.serverPort = setup.server_port;
             this.controlPort = setup.control_port;
             this.timingPort = setup.timing_port;
+            this.credentials = setup.credentials;
             this.audioSocketEndPoint = new IPEndPoint(IPAddress.Parse(host), (int) serverPort);
         }
 
@@ -307,17 +343,16 @@ namespace APLibrary.AirPlay
             }
             if (credentials != null)
             {
-                byte[] pcm = credentials.EncryptAudio(alac, header.Skip(4).Take(8).ToArray(), (long)packet.seq);
-                byte[] airplay = new byte[alac.Length + RTP_HEADER_SIZE];
-                Array.Copy(header, 0, airplay, 0, header.Length);
-                Array.Copy(pcm, 0, airplay, RTP_HEADER_SIZE, pcm.Length);
+                byte[] pcm = credentials.EncryptAudio(alac, header.Skip(4).Take(8).ToArray());
+                byte[] airplay = new byte[pcm.Length + RTP_HEADER_SIZE];
+                header.CopyTo(airplay, 0);
+                pcm.CopyTo(airplay, RTP_HEADER_SIZE);
                 return airplay;
-                // console.log(alac.length)
             }
             else
             {
                 Array.Copy(header, 0, airTunes, 0, header.Length);
-                Array.Copy(alac, 0, airTunes, RTP_HEADER_SIZE, alac.Length);
+                Array.Copy(alac, 0, airTunes, header.Length, alac.Length);
                 return airTunes;
             }
         }
@@ -330,7 +365,7 @@ namespace APLibrary.AirPlay
             byte[] p = new byte[1416]; // p = *out;
             uint[] input = new uint[pcmData.Length / 4];
             int j = 0;
-            for (int k = 0; j < pcmData.Length; k += 4)
+            for (int k = 0; k < pcmData.Length; k += 4)
             {
                 var res = pcmData[k];
                 res |= (byte)(pcmData[k + 1] << 8);
@@ -388,7 +423,7 @@ namespace APLibrary.AirPlay
 
             int alacSize = pindex; // should be right
             alacData = p;
-            return alacData.Skip(0).Take(alacSize).ToArray();
+            return alacData;
 
         }
 

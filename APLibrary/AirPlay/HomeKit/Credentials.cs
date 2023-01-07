@@ -8,6 +8,8 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using BitConverter;
+using System.Diagnostics;
+using System.Reflection.PortableExecutable;
 
 namespace APLibrary.AirPlay.HomeKit
 {
@@ -82,9 +84,12 @@ namespace APLibrary.AirPlay.HomeKit
             }
             return result;
         }
-        public byte[] EncryptAudio(byte[] message, byte[] aad, long nonce) {
-            (byte[] ct, byte[] tag) = Encryption.EncryptAndSeal(message, aad, EndianBitConverter.LittleEndian.GetBytes(Convert.ToUInt64(nonce)), this.writeKey);
-            return (ct.Concat(tag).ToArray()).Concat(EndianBitConverter.LittleEndian.GetBytes(Convert.ToUInt64(nonce))).ToArray();
+        public byte[] EncryptAudio(byte[] message, byte[] aad) {
+            (byte[] ct, byte[] tag) = Encryption.EncryptAndSeal(message, aad, (new byte[] { 0x00, 0x00, 0x00, 0x00 }).Concat(EndianBitConverter.LittleEndian.GetBytes(Convert.ToUInt64(0))).ToArray(), this.writeKey);
+            byte[] result = new byte[ct.Length + 24];
+            ct.CopyTo(result, 0);
+            tag.CopyTo(result, ct.Length);
+            return result;
         }
     }    
 }

@@ -16,6 +16,7 @@ namespace APLibrary.AirPlay
         private bool hasAirTunes;
         private long rtp_time_ref;
         private static long SEQ_NUM_WRAP = (long) Math.Pow(2, 16);
+        public AirTunesDevice device;
 
         public event PacketEvent emitPacket;
         public event NeedSyncEvent emitNeedSync;
@@ -48,7 +49,6 @@ namespace APLibrary.AirPlay
             {
                 
                 var packet = circularBuffer.ReadPacket();
-
                 packet.seq = seq % SEQ_NUM_WRAP;
                 packet.timestamp = (seq * 352 + 2 * 44100) % 4294967296;
 
@@ -70,21 +70,20 @@ namespace APLibrary.AirPlay
                  * If the burst size exceeds the UDP windows size (which we do not know), packets are lost.
                  */
                 // Debug.WriteLine("ref: " + rtp_time_ref.ToString());
-                Debug.WriteLine("sj");
                 var elapsed = DateTimeOffset.Now.ToUnixTimeMilliseconds() - rtp_time_ref;
                 /*
                  * currentSeq is the # of the packet we should be sending now. We have some packets to catch-up
                  * since syncAudio is not always running.
                  */
-                long currentSeq = (long)Math.Floor((decimal)(elapsed * 44100) / (352 * 1000));
+                long currentSeq = (long)(decimal)(elapsed * 44100) / (352 * 1000);
 
-                for (var i = this.lastSeq + 1; i <= currentSeq; i++)
+                for (long i = this.lastSeq + 1; i <= currentSeq; i++)
                     SendPacket(i);
-                Debug.WriteLine(currentSeq.ToString());
                 this.lastSeq = currentSeq;
 
                 // reschedule ourselves later
-                Task.Delay(30).ContinueWith(t => SyncAudio());
+                
+                SetTimeout(SyncAudio,1);
             }
 
             SyncAudio();
